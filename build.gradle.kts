@@ -3,8 +3,6 @@ buildscript {
     repositories {
         google()
         mavenCentral()
-        // We need jcenter for the Xposed API...
-        jcenter()
     }
     dependencies {
         classpath("com.android.tools.build:gradle:8.0.1")
@@ -20,8 +18,6 @@ allprojects {
         google()
         mavenCentral()
         maven(url = "https://api.xposed.info/")
-        // See comment in buildscript repos
-        jcenter()
     }
 }
 
