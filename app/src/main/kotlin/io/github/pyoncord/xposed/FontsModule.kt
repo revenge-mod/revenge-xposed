@@ -85,7 +85,7 @@ class FontsModule: PyonModule() {
             if (!fileName.startsWith(".")) {
                 val fontName = fileName.split('.')[0]
                 if (fontDef.main.keys.none { it == fontName }) {
-                    Log.i("Bunny", "Deleting font file: $fileName")
+                    Log.i("Revenge", "Deleting font file: $fileName")
                     file.delete()
                 }
             }
@@ -97,12 +97,12 @@ class FontsModule: PyonModule() {
                 async {
                     val url = fontDef.main.getValue(name)
                     try {
-                        Log.i("Bunny", "Downloading $name from $url")
+                        Log.i("Revenge", "Downloading $name from $url")
                         val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
                         if (file.exists()) return@async
 
                         val client = HttpClient(CIO) {
-                            install(UserAgent) { agent = "BunnyXposed" }
+                            install(UserAgent) { agent = "RevengeXposed" }
                         }
 
                         val response: HttpResponse = client.get(url)
@@ -113,7 +113,7 @@ class FontsModule: PyonModule() {
 
                         return@async
                     } catch (e: Throwable) {
-                        Log.e("Bunny", "Failed to download fonts ($name from $url)", e)
+                        Log.e("Revenge", "Failed to download fonts ($name from $url)", e)
                     }
                 }
             }.awaitAll()

@@ -13,7 +13,7 @@
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="An Xposed module to inject Bunny, a mod for Discord's mobile apps." />
+            android:value="An Xposed module to inject Revenge, a mod for Discord's mobile apps." />
         <meta-data
             android:name="xposedminversion"
             android:value="82" />

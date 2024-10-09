@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "io.github.pyoncord.xposed"
+    namespace = "io.github.revenge.xposed"
     compileSdk = 33
 
     defaultConfig {
-        applicationId = "io.github.pyoncord.xposed"
+        applicationId = "io.github.revenge.xposed"
         minSdk = 24
         targetSdk = 33
         versionCode = 203

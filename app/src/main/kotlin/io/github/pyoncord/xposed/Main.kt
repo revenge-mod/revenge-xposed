@@ -124,14 +124,14 @@ class Main : IXposedHookLoadPackage {
                     install(HttpTimeout) {
                         requestTimeoutMillis = if (bundle.exists()) 3000 else 10000
                     }
-                    install(UserAgent) { agent = "BunnyXposed" }
+                    install(UserAgent) { agent = "RevengeXposed" }
                 }
 
                 val url = 
                     if (config.customLoadUrl.enabled) config.customLoadUrl.url 
                     else "https://github.com/revenge-mod/Revenge/releases/latest/download/revenge.js"
 
-                Log.e("Bunny", "Fetching JS bundle from $url")
+                Log.e("Revenge", "Fetching JS bundle from $url")
                 
                 val response: HttpResponse = client.get(url) {
                     headers { 
@@ -153,13 +153,14 @@ class Main : IXposedHookLoadPackage {
                 return@async
             } catch (e: RedirectResponseException) {
                 if (e.response.status != HttpStatusCode.NotModified) throw e;
-                Log.e("Bunny", "Server reponded with status code 304 - no changes to file")
+                Log.e("Revenge", "Server reponded with status code 304 - no changes to file")
             } catch (e: Throwable) {
                 // activity.runOnUiThread {
-                //     Toast.makeText(activity.applicationContext, "Failed to fetch JS bundle, Bunny may not load!", Toast.LENGTH_SHORT).show()
+                //     Toast.makeText(activity.applicationContext, "Failed to fetch JS bundle, Revenge may not load!", Toast.LENGTH_SHORT).show()
                 // }
+                // so are we just removing the toast entirely or, cos like commented code without explanation isnt the best
 
-                Log.e("Bunny", "Failed to download bundle", e)
+                Log.e("Revenge", "Failed to download bundle", e)
             }
         }
 
