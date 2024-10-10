@@ -1,7 +1,7 @@
 // credits to janisslsm from his PR: https://github.com/vendetta-mod/VendettaXposed/pull/17
 // hooks are modified function from RN codebase
 
-package io.github.pyoncord.xposed
+package io.github.revenge.xposed
 
 import android.content.res.AssetManager
 import android.os.Build
@@ -41,7 +41,7 @@ data class FontDefinition(
     val main: Map<String, String>,
 )
 
-class FontsModule: PyonModule() {
+class FontsModule: Module() {
     private val EXTENSIONS = arrayOf("", "_bold", "_italic", "_bold_italic")
     private val FILE_EXTENSIONS = arrayOf(".ttf", ".otf")
     private val FONTS_ASSET_PATH = "fonts/"

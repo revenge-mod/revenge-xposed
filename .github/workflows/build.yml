@@ -25,29 +25,29 @@ jobs:
 
             - name: "Setup directories"
               run: |
-                  mkdir -p /tmp/pyonbuild/apks
-                  mkdir -p /tmp/pyonbuild/tools
+                  mkdir -p /tmp/build/apks
+                  mkdir -p /tmp/build/tools
 
             - name: "Move debug APK"
-              run: mv ./app/build/outputs/apk/debug/app-debug.apk /tmp/pyonbuild/apks
+              run: mv ./app/build/outputs/apk/debug/app-debug.apk /tmp/build/apks
 
             - name: "Download uber-apk-signer"
-              run: wget -nv "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.2.1/uber-apk-signer-1.2.1.jar" -O /tmp/pyonbuild/tools/uber-apk-signer.jar
+              run: wget -nv "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.2.1/uber-apk-signer-1.2.1.jar" -O /tmp/build/tools/uber-apk-signer.jar
 
             - name: "Sign release APK"
-              run: java -jar /tmp/pyonbuild/tools/uber-apk-signer.jar --apks ./app/build/outputs/apk/release/app-release-unsigned.apk --out /tmp/pyonbuild/apks/
+              run: java -jar /tmp/build/tools/uber-apk-signer.jar --apks ./app/build/outputs/apk/release/app-release-unsigned.apk --out /tmp/build/apks/
 
             - name: "Rename release APK"
-              run: mv /tmp/pyonbuild/apks/app-release-aligned-debugSigned.apk /tmp/pyonbuild/apks/app-release.apk
+              run: mv /tmp/build/apks/app-release-aligned-debugSigned.apk /tmp/build/apks/app-release.apk
 
             - name: "Upload debug APK"
               uses: actions/upload-artifact@v3
               with:
                 name: app-debug
-                path: /tmp/pyonbuild/apks/app-debug.apk
+                path: /tmp/build/apks/app-debug.apk
 
             - name: "Upload release APK"
               uses: actions/upload-artifact@v3
               with:
                 name: app-release
-                path: /tmp/pyonbuild/apks/app-release.apk
+                path: /tmp/build/apks/app-release.apk

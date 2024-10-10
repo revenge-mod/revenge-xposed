@@ -1,4 +1,4 @@
-package io.github.pyoncord.xposed
+package io.github.revenge.xposed
 
 import android.app.AndroidAppHelper
 import android.content.Context
@@ -16,7 +16,7 @@ data class SysColors(
     val accent3: List<String>
 )
 
-class SysColorsModule : PyonModule() {
+class SysColorsModule : Module() {
     private lateinit var context: Context
     fun isSupported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 

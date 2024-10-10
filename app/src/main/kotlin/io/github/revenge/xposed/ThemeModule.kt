@@ -1,4 +1,4 @@
-package io.github.pyoncord.xposed
+package io.github.revenge.xposed
 
 import android.content.Context
 import android.graphics.Color
@@ -35,7 +35,7 @@ data class Theme(
     val data: ThemeData
 )
 
-class ThemeModule : PyonModule() {
+class ThemeModule : Module() {
     private lateinit var param: XC_LoadPackage.LoadPackageParam
 
     private var theme: Theme? = null

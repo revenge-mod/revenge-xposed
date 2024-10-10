@@ -36,7 +36,7 @@ data class LoaderConfig(
 )
 
 class Main : IXposedHookLoadPackage {
-    private val pyonModules: Array<PyonModule> = arrayOf(
+    private val modules: Array<Module> = arrayOf(
         ThemeModule(),
         SysColorsModule(),
         FontsModule(),
@@ -47,7 +47,7 @@ class Main : IXposedHookLoadPackage {
             put("loaderName", "BunnyXposed")
             put("loaderVersion", BuildConfig.VERSION_NAME)
 
-            for (module in pyonModules) {
+            for (module in modules) {
                 module.buildJson(this)
             }
         }
@@ -73,7 +73,7 @@ class Main : IXposedHookLoadPackage {
             classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
         }.getOrElse { return@with }
 
-        for (module in pyonModules) module.onInit(param)
+        for (module in modules) module.onInit(param)
 
         val loadScriptFromAssets = catalystInstanceImpl.getDeclaredMethod(
             "loadScriptFromAssets",
