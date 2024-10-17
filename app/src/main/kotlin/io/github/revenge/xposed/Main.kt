@@ -1,8 +1,6 @@
 package io.github.revenge.xposed
 
-import android.app.Activity 
-import android.app.AndroidAppHelper
-import android.content.Context
+import android.app.Activity
 import android.content.res.AssetManager
 import android.content.res.Resources
 import android.util.Log
@@ -56,22 +54,32 @@ class Main : IXposedHookLoadPackage {
     }
 
     override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) = with (param) {
-        // val reactActivity = runCatching {
-        //     lpparam.classLoader.loadClass("com.discord.react_activities.ReactActivity")
-        // }.getOrElse { return } // Package is not our the target app, return
+        val reactActivity = runCatching {
+            classLoader.loadClass("com.discord.react_activities.ReactActivity")
+        }.getOrElse { return@with } // Package is not our the target app, return
 
-        // XposedBridge.hookMethod(reactActivity.getDeclaredMethod("onCreate", Bundle::class.java), object : XC_MethodHook() {
-        //     override fun beforeHookedMethod(param: MethodHookParam) {
-        //         init(lpparam, param.thisObject as Activity)
-        //     }
-        // })
-    // }
+        var activity: Activity? = null;
+        val onActivityCreateCallback = mutableSetOf<(activity: Activity) -> Unit>()
 
-    // fun init(param: XC_LoadPackage.LoadPackageParam, activity: Activity) = with (param) {
-        // val catalystInstanceImpl = classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
-        val catalystInstanceImpl = runCatching {
-            classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
-        }.getOrElse { return@with }
+        XposedBridge.hookMethod(reactActivity.getDeclaredMethod("onCreate", Bundle::class.java), object : XC_MethodHook() {
+            override fun beforeHookedMethod(param: MethodHookParam) {
+                activity = param.thisObject as Activity;
+                onActivityCreateCallback.forEach { cb -> cb(activity!!) }
+                onActivityCreateCallback.clear()
+            }
+        })
+
+        init(param) { cb ->
+            if (activity != null) cb(activity!!)
+            else onActivityCreateCallback.add(cb)
+        }
+    }
+
+    private fun init(
+        param: XC_LoadPackage.LoadPackageParam,
+        onActivityCreate: ((activity: Activity) -> Unit) -> Unit
+    ) = with (param) {
+        val catalystInstanceImpl = classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
 
         for (module in modules) module.onInit(param)
 
@@ -153,12 +161,17 @@ class Main : IXposedHookLoadPackage {
                 return@async
             } catch (e: RedirectResponseException) {
                 if (e.response.status != HttpStatusCode.NotModified) throw e;
-                Log.e("Revenge", "Server reponded with status code 304 - no changes to file")
+                Log.e("Revenge", "Server responded with status code 304 - no changes to file")
             } catch (e: Throwable) {
-                // activity.runOnUiThread {
-                //     Toast.makeText(activity.applicationContext, "Failed to fetch JS bundle, Revenge may not load!", Toast.LENGTH_SHORT).show()
-                // }
-                // so are we just removing the toast entirely or, cos like commented code without explanation isnt the best
+                onActivityCreate { activity ->
+                    activity.runOnUiThread {
+                        Toast.makeText(
+                            activity.applicationContext,
+                            "Failed to fetch JS bundle, Revenge may not load!",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
 
                 Log.e("Revenge", "Failed to download bundle", e)
             }

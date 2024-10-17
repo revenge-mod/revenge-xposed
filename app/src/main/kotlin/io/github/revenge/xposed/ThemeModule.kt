@@ -58,14 +58,14 @@ class ThemeModule : Module() {
         hookTheme()
     }
 
-    fun File.isValidish(): Boolean {
+    private fun File.isValidish(): Boolean {
         if (!this.exists()) return false
         
         val text = this.readText()
-        return !text.isBlank() && text != "{}" && text != "null"
+        return text.isNotBlank() && text != "{}" && text != "null"
     }
 
-    fun getTheme(): Theme? {
+    private fun getTheme(): Theme? {
         val filesDir = File(param.appInfo.dataDir, "files").apply { mkdirs() }
         val pyonDir = File(filesDir, "pyoncord").apply { mkdirs() }
         val themeFile = File(pyonDir, "current-theme.json")
@@ -139,12 +139,12 @@ class ThemeModule : Module() {
     }
 
     // Convert 0xRRGGBBAA to 0XAARRGGBB
-    fun hexStringToColorInt(hexString: String): Int {
+    private fun hexStringToColorInt(hexString: String): Int {
         val parsed = Color.parseColor(hexString)
-        return parsed.takeIf { hexString.length == 7 } ?: parsed and 0xFFFFFF or (parsed ushr 24)
+        return parsed.takeIf { hexString.length == 7 } ?: (parsed and 0xFFFFFF or (parsed ushr 24))
     }
 
-    fun hookThemeMethod(themeClass: Class<*>, methodName: String, themeValue: Int) {
+    private fun hookThemeMethod(themeClass: Class<*>, methodName: String, themeValue: Int) {
         try {
             themeClass.getDeclaredMethod(methodName).let { method ->
                 // Log.i("Hooking $methodName -> ${themeValue.toString(16)}")

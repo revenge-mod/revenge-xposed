@@ -5,15 +5,12 @@ package io.github.revenge.xposed
 
 import android.content.res.AssetManager
 import android.os.Build
-import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.Typeface.CustomFallbackBuilder
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
 import android.util.Log
-import android.webkit.URLUtil
 import de.robv.android.xposed.XC_MethodReplacement
-import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.Serializable
@@ -21,8 +18,6 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
 import java.io.IOException
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.*
 
 import io.ktor.client.*
@@ -67,7 +62,7 @@ class FontsModule: Module() {
                     val assetManager: AssetManager = param.args[2] as AssetManager
                     return createAssetTypeface(fontFamilyName, style, assetManager)
                 }
-            });
+            })
 
         val fontDefFile = File(appInfo.dataDir, "files/pyoncord/fonts.json")
         if (!fontDefFile.exists()) return@with
@@ -144,7 +139,7 @@ class FontsModule: Module() {
                     // ignore
                 }
 
-                for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filter { it != null }) {
+                for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
                     for (fileExtension in FILE_EXTENSIONS) {
                         val fileName = java.lang.StringBuilder()
                             .append(fontRootPath)
@@ -220,7 +215,7 @@ class FontsModule: Module() {
 
         // Lastly, after all those checks above, this is the original RN logic for
         // getting the typeface.
-        for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filter { it != null }) {
+        for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
             for (fileExtension in FILE_EXTENSIONS) {
                 val fileName = java.lang.StringBuilder()
                     .append(fontRootPath)
