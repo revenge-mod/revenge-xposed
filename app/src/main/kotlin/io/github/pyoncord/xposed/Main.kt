@@ -129,7 +129,7 @@ class Main : IXposedHookLoadPackage {
                 val client = HttpClient(CIO) {
                     expectSuccess = true
                     install(HttpTimeout) {
-                        requestTimeoutMillis = if (bundle.exists()) 3000 else 10000
+                        requestTimeoutMillis = if (bundle.exists()) 5000 else 10000
                     }
                     install(UserAgent) { agent = "BunnyXposed" }
                 }
