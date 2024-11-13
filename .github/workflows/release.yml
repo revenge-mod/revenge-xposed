@@ -44,7 +44,6 @@ jobs:
         -   name: Release
             run: |
                 mv app/build/outputs/apk_from_bundle/release/app-release-universal.apk ./app-release.apk
-                cp ./app-release.apk ./BunnyXposed-${{ github.event.inputs.versionName }}.apk
                 git config --local user.email "actions@github.com"
                 git config --local user.name "GitHub Actions"
                 tag="${{ github.event.inputs.versionCode }}"
