@@ -85,7 +85,7 @@ class ThemeModule : PyonModule() {
 
     fun hookTheme() {
         val themeManager = param.classLoader.loadClass("com.discord.theme.utils.ColorUtilsKt")
-        val darkTheme = param.classLoader.loadClass("com.discord.theme.DarkTheme")
+        val darkTheme = param.classLoader.loadClass("com.discord.theme.DarkerTheme")
         val lightTheme = param.classLoader.loadClass("com.discord.theme.LightTheme")
 
         val theme = this.theme
@@ -111,37 +111,41 @@ class ThemeModule : PyonModule() {
         // If there's any rawColors value, hook the color getter
         if (!theme.data.rawColors.isNullOrEmpty()) {
             val getColorCompat = themeManager.getDeclaredMethod(
-                "getColorCompat", 
-                Resources::class.java, 
+                "getColorCompat",
+                Resources::class.java,
                 Int::class.javaPrimitiveType,
-                Resources.Theme::class.java, 
+                Resources.Theme::class.java,
             )
 
             val getColorCompatLegacy = themeManager.getDeclaredMethod(
-                "getColorCompat", 
-                Context::class.java, 
+                "getColorCompat",
+                Context::class.java,
                 Int::class.javaPrimitiveType
             )
 
             val patch = object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val arg1 = param.args[0]
-                    val resources = if (arg1 is Context) arg1.resources else (arg1 as Resources)  
+                    val resources = if (arg1 is Context) arg1.resources else (arg1 as Resources)
                     val name = resources.getResourceEntryName(param.args[1] as Int)
 
                     if (rawColorMap[name] != null) param.result = rawColorMap[name]
                 }
             }
-            
+
             XposedBridge.hookMethod(getColorCompat, patch)
             XposedBridge.hookMethod(getColorCompatLegacy, patch)
         }
     }
 
-    // Convert 0xRRGGBBAA to 0XAARRGGBB
+    // Parse HEX colour string to INT. Takes "#RRGGBBAA" or "#RRGGBB"
     private fun hexStringToColorInt(hexString: String): Int {
-        val parsed = Color.parseColor(hexString)
-        return parsed.takeIf { hexString.length == 7 } ?: (parsed and 0xFFFFFF or (parsed ushr 24))
+        return if (hexString.length == 9 ) {
+            // Rearrange RRGGBBAA -> AARRGGBB so parseColor() is happy
+            val alpha = hexString.substring(7, 9)
+            val rrggbb = hexString.substring(1, 7)
+            Color.parseColor("#$alpha$rrggbb")
+        } else Color.parseColor(hexString)
     }
 
     private fun hookThemeMethod(themeClass: Class<*>, methodName: String, themeValue: Int) {
