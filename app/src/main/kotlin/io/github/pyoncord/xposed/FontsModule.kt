@@ -67,11 +67,12 @@ class FontsModule: PyonModule() {
         if (!fontDefFile.exists()) return@with
 
         val fontDef = try {
-            Json { ignoreUnknownKeys = true }.decodeFromString<FontDefinition>(fontDefFile.readText())
+            val json = Json { ignoreUnknownKeys = true }
+            json.decodeFromString<FontDefinition>(fontDefFile.readText())
         } catch (_: Throwable) { return@with }
 
         fontsDownloadsDir = File(appInfo.dataDir, "files/pyoncord/downloads/fonts").apply { mkdirs() }
-        fontsDir = File(fontsDownloadsDir, fontDef.name).apply { mkdirs() }
+        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
         fontsAbsPath = fontsDir.absolutePath + "/"
 
         fontsDir.listFiles()?.forEach { file ->

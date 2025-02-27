@@ -59,19 +59,19 @@ class Main : IXposedHookLoadPackage {
             lpparam.classLoader.loadClass("com.discord.react_activities.ReactActivity")
         }.getOrElse { return } // Package is not our the target app, return
 
-        var activity: Activity? = null;
+        var activity: Activity? = null
         val onActivityCreateCallback = mutableSetOf<(activity: Activity) -> Unit>()
 
         XposedBridge.hookMethod(reactActivity.getDeclaredMethod("onCreate", Bundle::class.java), object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
-                activity = param.thisObject as Activity;
-                onActivityCreateCallback.forEach { cb -> cb(activity!!) }
+                activity = param.thisObject as Activity
+                onActivityCreateCallback.forEach { cb -> cb(activity) }
                 onActivityCreateCallback.clear()
             }
         })
 
         init(lpparam) { cb ->
-            if (activity != null) cb(activity!!)
+            if (activity != null) cb(activity)
             else onActivityCreateCallback.add(cb)
         }
     }
@@ -162,7 +162,7 @@ class Main : IXposedHookLoadPackage {
 
                 return@async
             } catch (e: RedirectResponseException) {
-                if (e.response.status != HttpStatusCode.NotModified) throw e;
+                if (e.response.status != HttpStatusCode.NotModified) throw e
                 Log.e("Bunny", "Server responded with status code 304 - no changes to file")
             } catch (e: Throwable) {
                 onActivityCreate { activity ->
