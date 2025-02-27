@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.pyoncord.xposed"
         minSdk = 24
         targetSdk = 35
-        versionCode = 206
-        versionName = "0.2.6"
+        versionCode = 300
+        versionName = "0.3.0"
     }
 
     buildTypes {
