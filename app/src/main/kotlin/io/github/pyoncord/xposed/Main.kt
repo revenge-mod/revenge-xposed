@@ -27,6 +27,7 @@ data class CustomLoadUrl(
     val enabled: Boolean,
     val url: String
 )
+
 @Serializable
 data class LoaderConfig(
     val customLoadUrl: CustomLoadUrl
@@ -37,6 +38,7 @@ class Main : IXposedHookLoadPackage {
         ThemeModule(),
         SysColorsModule(),
         FontsModule(),
+        LogBoxModule()
     )
 
     fun buildLoaderJsonString(): String {
@@ -113,7 +115,8 @@ class Main : IXposedHookLoadPackage {
 
         val config = try {
             if (!configFile.exists()) throw Exception()
-            Json { ignoreUnknownKeys = true }.decodeFromString(configFile.readText())
+            val json = Json { ignoreUnknownKeys = true }
+            json.decodeFromString(configFile.readText())
         } catch (_: Exception) {
             LoaderConfig(
                 customLoadUrl = CustomLoadUrl(
