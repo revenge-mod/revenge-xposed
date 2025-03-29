@@ -33,27 +33,27 @@ class Plugin internal constructor(
     fun callbacks() = callbacks
 }
 
-class PluginBuilder internal constructor(
-    private val name: String,
-    val context: PluginContext
-) {
-    private var initBlock: () -> Unit = {}
-    private val callbacks = mutableMapOf<String, Callback>()
+class PluginBuilder internal constructor(private val name: String) {
+    private var initBlock: (PluginContext) -> Unit = {}
+    private val callbackBlocks = mutableMapOf<String, (PluginContext, Array<Any>) -> Unit>()
 
-    fun init(block: () -> Unit) {
+    fun init(block: (PluginContext) -> Unit) {
         initBlock = block
     }
 
-    operator fun String.invoke(callback: Callback) {
-        callbacks[this] = callback
+    operator fun String.invoke(callbackBlock: (PluginContext, Array<Any>) -> Unit) {
+        callbackBlocks[this] = callbackBlock
     }
 
-    fun build() = Plugin(name, callbacks, initBlock)
+    internal fun build(context: PluginContext) = Plugin(
+        name = name,
+        callbacks = callbackBlocks.mapValues { (_, block) -> Callback { args -> block(context, args) } },
+        init = { initBlock(context) }
+    )
 }
 
-fun PluginContext.plugin(name: String, block: PluginBuilder.() -> Unit) =
-    PluginBuilder(name, this).apply(block).build()
-
+fun plugin(name: String, block: PluginBuilder.() -> Unit) =
+    PluginBuilder(name).apply(block)
 
 class PluginContext private constructor(
     val appInfo: ApplicationInfo? = null,
@@ -78,8 +78,8 @@ internal fun pluginsReactPackage(pluginModules: List<NativeModule>) = object : R
     override fun createViewManagers(context: ReactApplicationContext) = emptyList<ViewManager<*, *>>()
 }
 
-// Class loader providing plugin APIs.
-private val CLASS_LOADER = object {}.javaClass.classLoader
+internal fun LoadPackageParam.initPlugins(pluginFiles: List<File>, errors: MutableList<String> = mutableListOf()) =
+    toPluginContext().initPlugins(pluginFiles, errors)
 
 internal fun PluginContext.initPlugins(
     pluginFiles: List<File>,
@@ -127,18 +127,21 @@ internal fun PluginContext.initPlugins(
         }
 
         try {
-            val pluginField = pluginClass.pluginField
-            if (pluginField != null) {
-                return@mapNotNull pluginField
+            val pluginBuilderField =
+                pluginClass.fields.find { field -> field.type.isPluginBuilder && field.canAccess() }
+                    ?.get(null) as? PluginBuilder
+
+
+            if (pluginBuilderField != null) {
+                return@mapNotNull pluginBuilderField.build(this)
             }
 
-            val pluginMethod = pluginClass.pluginMethod
-            if (pluginMethod != null) {
-                return@mapNotNull pluginMethod
-            }
+            val pluginBuilderMethod = pluginClass.methods.find { method ->
+                method.returnType.isPluginBuilder && method.parameterTypes.size == 0 && method.canAccess()
+            }?.invoke(null) as? PluginBuilder
 
-            if (pluginClass.isPlugin) {
-                return@mapNotNull pluginClass.getDeclaredConstructor().newInstance(this) as Plugin
+            if (pluginBuilderMethod != null) {
+                return@mapNotNull pluginBuilderMethod.build(this)
             }
         } catch (e: Exception) {
             errors.add("Failed to initialize plugin ${it::class.java.name}: ${e.message}")
@@ -149,19 +152,10 @@ internal fun PluginContext.initPlugins(
     }
 }
 
-internal fun LoadPackageParam.initPlugins(pluginFiles: List<File>, errors: MutableList<String> = mutableListOf()) =
-    toPluginContext().initPlugins(pluginFiles, errors)
+// Class loader providing plugin APIs.
+private val CLASS_LOADER = object {}.javaClass.classLoader
 
-val Class<*>.isPlugin get() = Plugin::class.java.isAssignableFrom(this)
-
-private val Class<*>.pluginField
-    get() = fields.find { field -> field.type.isPlugin && field.canAccess() }?.get(null) as? Plugin
-
-private val Class<*>.pluginMethod
-    get() = methods.find { method ->
-        method.returnType.isPlugin && method.parameterTypes.size == 0 && method.canAccess()
-    }?.invoke(null) as? Plugin
-
+private val Class<*>.isPluginBuilder get() = PluginBuilder::class.java.isAssignableFrom(this)
 
 private fun Member.canAccess(): Boolean {
     if (this is Method && parameterTypes.size != 0) return false
