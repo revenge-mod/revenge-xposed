@@ -7,27 +7,16 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.revenge.plugin.initPlugins
 import io.github.revenge.plugin.pluginsReactPackage
 import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.*
 import java.io.File
 import java.util.ArrayList
-import java.util.Collections.addAll
 
 class PluginsModule : Module() {
     private val errors: MutableList<String> = mutableListOf()
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun buildJson(builder: JsonObjectBuilder) {
-        builder.apply {
-            put("errors", buildJsonArray { 
-                errors.forEach { error -> add(
-                    JsonPrimitive(error)
-                ) }
-            })
-        }
+        builder.put("pluginErrors", buildJsonArray { addAll(errors) })
     }
 
     override fun init(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
@@ -41,7 +30,7 @@ class PluginsModule : Module() {
             return@with
         }
 
-        // Here, plugins are initialized
+        // Here, plugins are initialized.
         val plugins = try {
             initPlugins(pluginFiles, errors)
         } catch (e: Throwable) {
