@@ -52,7 +52,7 @@ class ThemeModule : Module() {
         }
     }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) {
+    override fun init(packageParam: XC_LoadPackage.LoadPackageParam) {
         param = packageParam
         theme = getTheme()
         hookTheme()
