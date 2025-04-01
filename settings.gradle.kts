@@ -15,5 +15,8 @@ dependencyResolutionManagement {
         maven(url = "https://api.xposed.info/")
     }
 }
-rootProject.name = "RevengeXposed"
+
+include(":plugin")
 include(":app")
+
+rootProject.name = "RevengeXposed"

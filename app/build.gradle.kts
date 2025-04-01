@@ -13,7 +13,7 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1101
-        versionName = "1.1.1"
+        versionName = version.toString()
     }
 
     buildTypes {
@@ -39,6 +39,7 @@ android {
 }
 
 dependencies {
+    implementation(project(":plugin"))
     compileOnly("com.facebook.react:react-android:0.71.8")
     compileOnly("de.robv.android.xposed:api:82")
     implementation("androidx.core:core-ktx:1.15.0")
