@@ -115,7 +115,7 @@ internal fun PluginContext.initPlugins(
             pluginPaths,
             File(appInfo!!.dataDir, "revenge_plugin_dex_cache").absolutePath,
             null,
-            CLASS_LOADER // Provide plugin APIs.
+            classLoader // Provide plugin APIs.
         )
 
     return pluginClassNames.mapNotNull {
@@ -151,9 +151,6 @@ internal fun PluginContext.initPlugins(
         return@mapNotNull null
     }
 }
-
-// Class loader providing plugin APIs.
-private val CLASS_LOADER = object {}.javaClass.classLoader
 
 private val Class<*>.isPluginBuilder get() = PluginBuilder::class.java.isAssignableFrom(this)
 
