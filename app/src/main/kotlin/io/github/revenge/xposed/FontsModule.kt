@@ -51,7 +51,7 @@ class FontsModule: Module() {
         }
     }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
+    override fun init(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
         XposedHelpers.findAndHookMethod("com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
             String::class.java,
             Int::class.java,
