@@ -14,7 +14,6 @@ import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.*
 import java.io.IOException
 import java.io.File
@@ -68,11 +67,12 @@ class FontsModule: Module() {
         if (!fontDefFile.exists()) return@with
 
         val fontDef = try {
-            Json { ignoreUnknownKeys = true }.decodeFromString<FontDefinition>(fontDefFile.readText())
+            val json = Json { ignoreUnknownKeys = true }
+            json.decodeFromString<FontDefinition>(fontDefFile.readText())
         } catch (_: Throwable) { return@with }
 
         fontsDownloadsDir = File(appInfo.dataDir, "files/pyoncord/downloads/fonts").apply { mkdirs() }
-        fontsDir = File(fontsDownloadsDir, fontDef.name).apply { mkdirs() }
+        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
         fontsAbsPath = fontsDir.absolutePath + "/"
 
         fontsDir.listFiles()?.forEach { file ->
