@@ -63,9 +63,6 @@ class Main : IXposedHookLoadPackage {
         var activity: Activity? = null;
         val onActivityCreateCallback = mutableSetOf<(activity: Activity) -> Unit>()
 
-        var activity: Activity? = null
-        val onActivityCreateCallback = mutableSetOf<(activity: Activity) -> Unit>()
-
         XposedBridge.hookMethod(reactActivity.getDeclaredMethod("onCreate", Bundle::class.java), object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 activity = param.thisObject as Activity
