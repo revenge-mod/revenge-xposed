@@ -52,11 +52,14 @@ class FontsModule: Module() {
 
     override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
         try {
-            // 280201+
+            // Try to hook the new class (280201+)
             hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager\$Companion")
-        } catch (e: NoSuchMethodError) {
-            // 280200-
-            hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager")
+        } catch (e: Throwable) {
+            when (e) {
+                // Hook old class (280200-)
+                is NoClassDefFoundError, is XposedHelpers.ClassNotFoundError -> hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager")
+                else -> throw e
+            }
         }
 
         val fontDefFile = File(appInfo.dataDir, "files/pyoncord/fonts.json")
