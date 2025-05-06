@@ -51,17 +51,13 @@ class FontsModule: Module() {
     }
 
     override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
-        XposedHelpers.findAndHookMethod("com.facebook.react.views.text.ReactFontManager", classLoader, "createAssetTypeface",
-            String::class.java,
-            Int::class.java,
-            "android.content.res.AssetManager", object : XC_MethodReplacement() {
-                override fun replaceHookedMethod(param: MethodHookParam): Typeface? {
-                    val fontFamilyName: String = param.args[0].toString()
-                    val style: Int = param.args[1] as Int
-                    val assetManager: AssetManager = param.args[2] as AssetManager
-                    return createAssetTypeface(fontFamilyName, style, assetManager)
-                }
-            })
+        try {
+            // 280201+
+            hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager\$Companion")
+        } catch (e: NoSuchMethodError) {
+            // 280200-
+            hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager")
+        }
 
         val fontDefFile = File(appInfo.dataDir, "files/pyoncord/fonts.json")
         if (!fontDefFile.exists()) return@with
@@ -115,6 +111,24 @@ class FontsModule: Module() {
         } 
 
         return@with
+    }
+
+    private fun hookClass(classLoader: ClassLoader, className: String) {
+        XposedHelpers.findAndHookMethod(
+            className,
+            classLoader,
+            "createAssetTypeface",
+            String::class.java,
+            Int::class.java,
+            "android.content.res.AssetManager",
+            object : XC_MethodReplacement() {
+                override fun replaceHookedMethod(param: MethodHookParam): Typeface? {
+                    val fontFamilyName: String = param.args[0].toString()
+                    val style: Int = param.args[1] as Int
+                    val assetManager: AssetManager = param.args[2] as AssetManager
+                    return createAssetTypeface(fontFamilyName, style, assetManager)
+                }
+            })
     }
 
     private fun createAssetTypefaceWithFallbacks(
