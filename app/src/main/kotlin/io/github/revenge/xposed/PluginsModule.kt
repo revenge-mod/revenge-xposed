@@ -1,13 +1,8 @@
 package io.github.revenge.xposed
 
-import com.facebook.react.ReactPackage
-import com.facebook.react.bridge.NativeModule
-import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.uimanager.ViewManager
 import dalvik.system.DexClassLoader
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.callbacks.XC_LoadPackage
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
 import io.github.revenge.plugin.*
 import kotlinx.serialization.ExperimentalSerializationApi
@@ -16,28 +11,37 @@ import java.io.File
 import java.lang.reflect.Member
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.lang.reflect.Proxy
 import java.util.ArrayList
 import java.util.jar.JarFile
 
-
 internal fun LoadPackageParam.toPluginContext() = PluginContext(appInfo, classLoader)
 
-internal fun pluginsReactPackage(pluginModules: List<NativeModule>) = object : ReactPackage {
-    override fun createNativeModules(context: ReactApplicationContext): List<NativeModule> = pluginModules
-    override fun createViewManagers(context: ReactApplicationContext) = emptyList<ViewManager<*, *>>()
-}
+// Use a proxy because ReactPackage is not available at plugin build time.
+internal fun pluginsReactPackage(pluginModules: List<*>, classLoader: ClassLoader) = Proxy.newProxyInstance(
+    classLoader,
+    arrayOf(classLoader.loadClass("com.facebook.react.ReactPackage")),
+    { _, method, args ->
+        when (method.name) {
+            "createNativeModules" -> pluginModules
+            "createViewManagers" -> emptyList<Object>()
+            else -> throw UnsupportedOperationException("Method ${method.name} is not supported")
+        }
+    }
+)
 
-internal fun LoadPackageParam.initPlugins(pluginFiles: List<File>, errors: MutableList<String> = mutableListOf()) =
-    toPluginContext().initPlugins(pluginFiles, errors)
+internal fun LoadPackageParam.initPlugins(pluginFiles: List<File>) =
+    toPluginContext().initPlugins(pluginFiles)
 
 internal fun PluginContext.initPlugins(
     pluginFiles: List<File>,
-    errors: MutableList<String> = mutableListOf()
-): List<Plugin> {
+): Pair<List<*>, List<String>> {
+    val errors = mutableListOf<String>()
+
     val pluginPaths = pluginFiles
         .filter { pluginFile ->
             pluginFile.exists().also { exists ->
-                if (!exists) errors.add("Plugin file does not exist: ${pluginFile.absolutePath}")
+                if (!exists) errors += "Plugin file does not exist: ${pluginFile.absolutePath}"
             }
         }
         .joinToString(File.pathSeparator) { it.absolutePath }
@@ -47,13 +51,13 @@ internal fun PluginContext.initPlugins(
         val manifest = jarFile.manifest
 
         if (manifest == null) {
-            errors.add("Manifest not found in plugin file: ${pluginFile.absolutePath}")
+            errors += "Manifest not found in plugin file: ${pluginFile.absolutePath}"
             return@mapNotNull null
         }
 
         manifest.mainAttributes.getValue("Revenge-Plugin-Class").also { attribute ->
             if (attribute == null) {
-                errors.add("Revenge-Plugin-Class not found in manifest: ${pluginFile.absolutePath}")
+                errors += "Revenge-Plugin-Class not found in manifest: ${pluginFile.absolutePath}"
                 return@mapNotNull null
             }
         }
@@ -62,7 +66,7 @@ internal fun PluginContext.initPlugins(
     val pluginClassLoader =
         DexClassLoader(
             pluginPaths,
-            File(appInfo!!.dataDir, "revenge_plugin_dex_cache").absolutePath,
+            File(appInfo.dataDir, "revenge_plugin_dex_cache").absolutePath,
             null,
             classLoader // Provide plugin APIs.
         )
@@ -71,34 +75,34 @@ internal fun PluginContext.initPlugins(
         val pluginClass = try {
             pluginClassLoader.loadClass(it)
         } catch (_: ClassNotFoundException) {
-            errors.add("Plugin class not found: $it")
+            errors += "Plugin class not found: $it"
             return@mapNotNull null
         }
 
         try {
-            val pluginBuilderField =
+            val pluginBuilderFromField =
                 pluginClass.fields.find { field -> field.type.isPluginBuilder && field.canAccess() }
                     ?.get(null) as? PluginBuilder
 
-
-            if (pluginBuilderField != null) {
-                return@mapNotNull pluginBuilderField.build(this)
+            if (pluginBuilderFromField != null) {
+                return@mapNotNull with(pluginBuilderFromField) { build() }
             }
 
-            val pluginBuilderMethod = pluginClass.methods.find { method ->
+            val pluginBuilderFromMethod = pluginClass.methods.find { method ->
                 method.returnType.isPluginBuilder && method.parameterTypes.isEmpty() && method.canAccess()
             }?.invoke(null) as? PluginBuilder
 
-            if (pluginBuilderMethod != null) {
-                return@mapNotNull pluginBuilderMethod.build(this)
+            if (pluginBuilderFromMethod != null) {
+                return@mapNotNull with(pluginBuilderFromMethod) { build() }
             }
         } catch (e: Exception) {
-            errors.add("Failed to initialize plugin ${it::class.java.name}: ${e.message}")
+            errors += "Failed to initialize plugin ${it::class.java.name}: ${e.message}"
         }
 
-        errors.add("Plugin class $it does not have a valid plugin field or method")
+        errors += "Plugin class $it does not have a valid plugin field or method"
+
         return@mapNotNull null
-    }
+    } to errors
 }
 
 private val Class<*>.isPluginBuilder get() = PluginBuilder::class.java.isAssignableFrom(this)
@@ -110,33 +114,36 @@ private fun Member.canAccess(): Boolean {
 }
 
 class PluginsModule : Module() {
-    private val errors: MutableList<String> = mutableListOf()
+    private val pluginErrors: MutableList<String> = mutableListOf()
 
     @OptIn(ExperimentalSerializationApi::class)
     override fun buildJson(builder: JsonObjectBuilder) {
-        builder.put("pluginErrors", buildJsonArray { addAll(errors) })
+        builder.put("pluginErrors", buildJsonArray { addAll(pluginErrors) })
     }
 
-    override fun init(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
+    override fun init(packageParam: LoadPackageParam) = with(packageParam) {
         val pluginFilesJson = File(appInfo.dataDir, "files/revenge/plugins.json")
         if (!pluginFilesJson.exists()) return@with
 
         val pluginFiles = try {
             Json.decodeFromString<List<String>>(pluginFilesJson.readText()).map { File(it) }
         } catch (_: Throwable) {
-            errors.add("Failed to parse plugins.json")
+            pluginErrors += "Failed to parse plugins.json"
             return@with
         }
 
-        // Here, plugins are initialized.
-        val plugins = try {
-            initPlugins(pluginFiles, errors)
+        // Here, plugins are initialized. Errors during initialization are collected below.
+        val (plugins, initPluginsErrors) = try {
+            initPlugins(pluginFiles)
         } catch (e: Throwable) {
-            errors.add("Failed to load plugins: ${e.message}")
+            pluginErrors += "Failed to load plugins: ${e.message}"
             return@with
         }
 
-        val pluginsReactPackage = pluginsReactPackage(plugins)
+        // If there are errors during initialization, we add them to the list.
+        pluginErrors += initPluginsErrors
+
+        val pluginsReactPackage = pluginsReactPackage(plugins, classLoader)
 
         // Hooking the method that returns the list of React packages
         // and adding our own package to it.
@@ -151,9 +158,9 @@ class PluginsModule : Module() {
                 @Suppress("UNCHECKED_CAST")
                 val reactPackages = XposedBridge.invokeOriginalMethod(
                     param.method, param.thisObject, param.args
-                ) as ArrayList<ReactPackage>
+                ) as ArrayList<Any>
 
-                reactPackages += pluginsReactPackage
+                reactPackages.add(pluginsReactPackage)
 
                 param.result = reactPackages
             }

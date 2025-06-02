@@ -21,10 +21,6 @@ android {
     }
 }
 
-dependencies {
-    compileOnly("com.facebook.react:react-android:0.71.8")
-}
-
 publishing {
     repositories {
         maven {
@@ -39,13 +35,13 @@ publishing {
 
     publications {
         create<MavenPublication>("gpr") {
+            groupId = "io.github.revenge"
+            artifactId = "plugin"
+            version = project.version.toString()
+            
             afterEvaluate {
                 from(components["release"])
             }
-
-            groupId = "io.github.revenge"
-            artifactId = "plugin"
-            version = version
         }
     }
 }

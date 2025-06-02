@@ -36,13 +36,16 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    lint {
+        // TODO: Align Xposed native libraries to 16KB.
+        disable += "Aligned16KB" 
+    }
 }
 
 dependencies {
     implementation(project(":plugin"))
-    compileOnly("com.facebook.react:react-android:0.71.8")
     compileOnly("de.robv.android.xposed:api:82")
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.0")
     implementation("io.ktor:ktor-client-core:2.3.9")
