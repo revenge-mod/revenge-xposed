@@ -34,13 +34,6 @@ data class LoaderConfig(
 )
 
 class Main : IXposedHookLoadPackage {
-    private val modules: Array<Module> = arrayOf(
-        PluginsModule(),
-        ThemeModule(),
-        SysColorsModule(),
-        FontsModule(),
-    )
-
     override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) = with(param) {
         val reactActivity = runCatching {
             classLoader.loadClass("com.discord.react_activities.ReactActivity")
@@ -68,8 +61,15 @@ class Main : IXposedHookLoadPackage {
     private fun init(
         param: XC_LoadPackage.LoadPackageParam,
         onActivityCreate: ((activity: Activity) -> Unit) -> Unit
-    ) = with(param) {
-        val catalystInstanceImpl = classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
+    ) {
+        val modules: Array<Module> = arrayOf(
+            PluginsModule(),
+            ThemeModule(),
+            SysColorsModule(),
+            FontsModule(),
+        )
+
+        val catalystInstanceImpl = param.classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
 
         for (module in modules) module.init(param)
 
@@ -93,8 +93,8 @@ class Main : IXposedHookLoadPackage {
             String::class.java
         ).apply { isAccessible = true }
 
-        val cacheDir = File(appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
-        val filesDir = File(appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
+        val cacheDir = File(param.appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
+        val filesDir = File(param.appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
 
         val preloadsDir = File(filesDir, "preloads").apply { mkdirs() }
         val bundle = File(cacheDir, "bundle.js")
@@ -102,20 +102,17 @@ class Main : IXposedHookLoadPackage {
 
         val configFile = File(filesDir, "loader.json")
 
-        val config = try {
+        val config = runCatching<LoaderConfig> {
             if (!configFile.exists()) throw Exception()
             Json { ignoreUnknownKeys = true }.decodeFromString(configFile.readText())
-        } catch (_: Exception) {
-            LoaderConfig(
-                customLoadUrl = CustomLoadUrl(
-                    enabled = false,
-                    url = "" // Not used
-                )
+        }.getOrNull() ?: LoaderConfig(
+            customLoadUrl = CustomLoadUrl(
+                enabled = false,
+                url = "" // Not used
             )
-        }
+        )
 
-        val scope = MainScope()
-        val httpJob = scope.async(Dispatchers.IO) {
+        val httpJob = MainScope().async(Dispatchers.IO) {
             try {
                 val client = HttpClient(CIO) {
                     expectSuccess = true
@@ -177,9 +174,7 @@ class Main : IXposedHookLoadPackage {
                         put("loaderName", "RevengeXposed")
                         put("loaderVersion", BuildConfig.VERSION_NAME)
 
-                        for (module in modules) {
-                            module.buildJson(this)
-                        }
+                        modules.forEach { it.buildJson(this) }
                     }))
                 )
 
@@ -205,8 +200,8 @@ class Main : IXposedHookLoadPackage {
         XposedBridge.hookMethod(loadScriptFromAssets, patch)
         XposedBridge.hookMethod(loadScriptFromFile, patch)
 
-        // Fighting the side effects of changing the package name
-        if (packageName != "com.discord") {
+        // Fighting the side effects of changing the package name.
+        if (param.packageName != "com.discord") {
             val getIdentifier = Resources::class.java.getDeclaredMethod(
                 "getIdentifier",
                 String::class.java,
