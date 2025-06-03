@@ -148,7 +148,6 @@ class PluginsModule : Module() {
         // Hooking the method that returns the list of React packages
         // and adding our own package to it.
         // Our own package is shipping the plugins as NativeModules.
-
         val getPackagesMethod = classLoader
             .loadClass("com.discord.bridge.DCDPackageList")
             .getDeclaredMethod("getPackages")
@@ -165,6 +164,5 @@ class PluginsModule : Module() {
                 param.result = reactPackages
             }
         })
-
     }
 }

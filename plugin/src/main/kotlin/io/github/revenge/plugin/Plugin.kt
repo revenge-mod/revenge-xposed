@@ -22,10 +22,10 @@ class PluginBuilder internal constructor(private val name: String) {
         callbackBlocks[this] = callbackBlock
     }
 
-    // Use a proxy because ReactContextBaseJavaModule is not available at plugin build time.
+    // Use a proxy because NativeModule is not available at plugin build time.
     fun PluginContext.build(): Any = Proxy.newProxyInstance(
         classLoader,
-        arrayOf(classLoader.loadClass("com.facebook.react.bridge.ReactContextBaseJavaModule"))
+        arrayOf(classLoader.loadClass("com.facebook.react.bridge.NativeModule"))
     ) { _, method: Method, args: Array<Any> ->
         when (method.name) {
             "getName" -> name
@@ -42,10 +42,16 @@ class PluginBuilder internal constructor(private val name: String) {
                 }
             }
 
+            "canOverrideExistingModule" -> false
+            "invalidate",
+            "onCatalystInstanceDestroy" -> {
+                // No-op for now, can be overridden if needed.
+            }
+
             else -> throw NoSuchMethodException("Method ${method.name} not found in plugin $name")
         }
-    } 
+    }.also { initBlock() }
 }
 
-fun plugin(name: String, block: PluginBuilder.() -> Unit) =
-    PluginBuilder(name).apply(block)
+fun PluginContext.plugin(name: String, block: PluginBuilder.() -> Unit) =
+    with(PluginBuilder(name).apply(block)) { build() }
