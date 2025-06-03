@@ -47,13 +47,13 @@ class Main : IXposedHookLoadPackage {
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     activity = param.thisObject as Activity;
-                    onActivityCreateCallback.forEach { cb -> cb(activity!!) }
+                    onActivityCreateCallback.forEach { cb -> cb(activity) }
                     onActivityCreateCallback.clear()
                 }
             })
 
         init(param) { cb ->
-            if (activity != null) cb(activity!!)
+            if (activity != null) cb(activity)
             else onActivityCreateCallback.add(cb)
         }
     }
@@ -67,6 +67,7 @@ class Main : IXposedHookLoadPackage {
             ThemeModule(),
             SysColorsModule(),
             FontsModule(),
+            LogBoxModule(),
         )
 
         val catalystInstanceImpl = param.classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")

@@ -11,6 +11,9 @@ on:
                 description: This releases version code
                 default: "1000"
 
+permissions:
+    contents: write
+
 jobs:
     build:
         runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
             uses: actions/checkout@master
     
         -   name: Setup JDK 17
-            uses: actions/setup-java@v2
+            uses: actions/setup-java@v3
             with:
                 java-version: 17
                 distribution: 'temurin'
@@ -35,11 +38,28 @@ jobs:
                 versionCode: ${{github.event.inputs.versionCode}}
                 versionName: ${{github.event.inputs.versionName}}
         
+        -   name: Bump Version
+            continue-on-error: true
+            run: |
+                git config --local user.email "actions@github.com"
+                git config --local user.name "GitHub Actions"
+                git add app/build.gradle.kts
+                if ! git diff --quiet app/build.gradle.kts; then
+                    git commit -m "chore: Bump version to ${{github.event.inputs.versionName}} (${{github.event.inputs.versionCode}})"
+                    git push
+                else
+                    echo "No changes to version file, skipping commit"
+                fi
+            
         -   name: Build Signed APK
             run: |
                 echo "${{ secrets.keystore }}" | base64 -d > $GITHUB_WORKSPACE/signing-key.jks
                 chmod +x ./gradlew
-                ./gradlew packageReleaseUniversalApk -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks -Pandroid.injected.signing.store.password=${{ secrets.keystore_password }} -Pandroid.injected.signing.key.alias=${{ secrets.key_alias }} -Pandroid.injected.signing.key.password=${{ secrets.key_password }}
+                ./gradlew packageReleaseUniversalApk \
+                    -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
+                    -Pandroid.injected.signing.store.password=${{ secrets.keystore_password }} \
+                    -Pandroid.injected.signing.key.alias=${{ secrets.key_alias }} \
+                    -Pandroid.injected.signing.key.password=${{ secrets.key_password }}
     
         -   name: Release
             run: |
