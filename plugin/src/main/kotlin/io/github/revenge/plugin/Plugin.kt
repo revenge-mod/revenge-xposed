@@ -44,7 +44,7 @@ class PluginBuilder internal constructor(private val name: String) {
 
             else -> throw NoSuchMethodException("Method ${method.name} not found in plugin $name")
         }
-    }
+    } 
 }
 
 fun plugin(name: String, block: PluginBuilder.() -> Unit) =
