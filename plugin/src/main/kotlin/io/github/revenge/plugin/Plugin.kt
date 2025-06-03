@@ -12,13 +12,13 @@ class PluginContext(
 
 class PluginBuilder internal constructor(private val name: String) {
     private var initBlock: PluginContext.() -> Unit = {}
-    private val callbackBlocks = mutableMapOf<String, PluginContext.(Array<Any>) -> Unit>()
+    private val callbackBlocks = mutableMapOf<String, PluginContext.(Array<Any?>) -> Unit>()
 
     fun init(block: PluginContext.() -> Unit) {
         initBlock = block
     }
 
-    operator fun String.invoke(callbackBlock: PluginContext.(Array<Any>) -> Unit) {
+    operator fun String.invoke(callbackBlock: PluginContext.(Array<Any?>) -> Unit) {
         callbackBlocks[this] = callbackBlock
     }
 
@@ -26,7 +26,7 @@ class PluginBuilder internal constructor(private val name: String) {
     fun PluginContext.build(): Any = Proxy.newProxyInstance(
         classLoader,
         arrayOf(classLoader.loadClass("com.facebook.react.bridge.NativeModule"))
-    ) { _, method: Method, args: Array<Any> ->
+    ) { _, method, _ ->
         when (method.name) {
             "getName" -> name
             "getCallbacks" -> callbackBlocks.mapValues { (_, block) ->
@@ -34,9 +34,9 @@ class PluginBuilder internal constructor(private val name: String) {
                 Proxy.newProxyInstance(
                     classLoader,
                     arrayOf(classLoader.loadClass("com.facebook.react.bridge.Callback"))
-                ) { _, method, args ->
+                ) { _, method, args: Array<Any?>? ->
                     when (method.name) {
-                        "invoke" -> block(args)
+                        "invoke" -> block(args ?: emptyArray())
                         else -> throw NoSuchMethodException("Method ${method.name} not found in plugin $name")
                     }
                 }
