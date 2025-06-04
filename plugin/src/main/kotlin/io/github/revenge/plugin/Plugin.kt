@@ -43,6 +43,8 @@ class PluginBuilder internal constructor(private val name: String) {
             }
 
             "canOverrideExistingModule" -> false
+
+            "initialize",
             "invalidate",
             "onCatalystInstanceDestroy" -> {
                 // No-op for now, can be overridden if needed.
