@@ -149,7 +149,7 @@ class PluginsModule : Module() {
         // and adding our own package to it.
         // Our own package is shipping the plugins as NativeModules.
         val getPackagesMethod = classLoader
-            .loadClass("com.discord.bridge.DCDPackageList")
+            .loadClass("com.discord.bridge.DCDReactNativeHost")
             .getDeclaredMethod("getPackages")
 
         XposedBridge.hookMethod(getPackagesMethod, object : XC_MethodHook() {
