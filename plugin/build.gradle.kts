@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "io.github.revenge.plugin"
+    namespace = "io.github.revenge"
     compileSdk = 35
 
     defaultConfig {
@@ -16,13 +16,14 @@ android {
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+
     kotlinOptions {
         jvmTarget = "1.8"
     }
+}
 
-    publishing {
-        singleVariant("release") {}
-    }
+dependencies {
+    compileOnly("com.facebook.react:react-android:0.71.8")
 }
 
 publishing {

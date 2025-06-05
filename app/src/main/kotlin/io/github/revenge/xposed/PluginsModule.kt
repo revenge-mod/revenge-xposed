@@ -4,7 +4,8 @@ import dalvik.system.DexClassLoader
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
-import io.github.revenge.plugin.*
+import io.github.revenge.Plugin
+import io.github.revenge.Plugin.Companion.plugin
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.*
 import java.io.File
@@ -14,11 +15,10 @@ import java.lang.reflect.Modifier
 import java.lang.reflect.Proxy
 import java.util.ArrayList
 import java.util.jar.JarFile
-
-internal fun LoadPackageParam.toPluginContext() = PluginContext(appInfo, classLoader)
+import kotlin.jvm.java
 
 // Use a proxy because ReactPackage is not available at plugin build time.
-internal fun pluginsReactPackage(pluginModules: List<*>, classLoader: ClassLoader) = Proxy.newProxyInstance(
+private fun pluginsReactPackage(pluginModules: List<*>, classLoader: ClassLoader) = Proxy.newProxyInstance(
     classLoader,
     arrayOf(classLoader.loadClass("com.facebook.react.ReactPackage")),
     { _, method, args ->
@@ -30,21 +30,98 @@ internal fun pluginsReactPackage(pluginModules: List<*>, classLoader: ClassLoade
     }
 )
 
-internal fun LoadPackageParam.initPlugins(pluginFiles: List<File>) =
-    toPluginContext().initPlugins(pluginFiles)
+private val Class<*>.isPluginBuilder
+    get() = Plugin.Builder::class.java.isAssignableFrom(this)
 
-internal fun PluginContext.initPlugins(
-    pluginFiles: List<File>,
-): Pair<List<*>, List<String>> {
-    val errors = mutableListOf<String>()
+private val Member.accessible: Boolean
+    get() = (this is Method && parameterTypes.isEmpty())
+            ||
+            (Modifier.isStatic(modifiers) && Modifier.isPublic(modifiers))
 
-    val pluginPaths = pluginFiles
-        .filter { pluginFile ->
-            pluginFile.exists().also { exists ->
-                if (!exists) errors += "Plugin file does not exist: ${pluginFile.absolutePath}"
-            }
+/**
+ * Loads a plugin from a class according to the following rules:
+ * 1. The class must have a public static field of type [Plugin.Builder] named "plugin".
+ * 2. The class must have a public static method with no parameters that returns [Plugin.Builder].
+ * 3. If both are present, the field takes precedence.
+ * 4. If neither is present, the plugin is not loaded and an error is logged.
+ * 
+ * @param clazz The class to load the plugin from.
+ * @param errors A mutable list to collect errors during plugin loading.
+ * @return The loaded plugin or null if loading failed.
+ */
+private fun Plugin.Context.loadPlugin(
+    clazz: Class<*>,
+    errors: MutableList<String>,
+): Plugin? {
+    try {
+        val pluginBuilderFromField =
+            clazz.fields.find { field -> field.type.isPluginBuilder && field.accessible }?.get(null) as? Plugin.Builder
+
+        if (pluginBuilderFromField != null) {
+            return with(pluginBuilderFromField) { build() }
         }
-        .joinToString(File.pathSeparator) { it.absolutePath }
+
+        val pluginBuilderFromMethod = clazz.methods.find { method ->
+            method.returnType.isPluginBuilder && method.parameterTypes.isEmpty() && method.accessible
+        }?.invoke(null) as? Plugin.Builder
+
+        if (pluginBuilderFromMethod != null) {
+            return with(pluginBuilderFromMethod) { build() }
+        }
+
+        errors += "Plugin class ${clazz.canonicalName} does not have a public plugin field or public parameterless method"
+
+        return null
+    } catch (e: Exception) {
+        errors += "Failed to load plugin from class ${clazz.canonicalName}: ${e.message}"
+    }
+
+    return null
+}
+
+
+/**
+ * Loads plugins from the specified class names according to the rules from [loadPlugin] for each class.
+ *
+ * @param classNames The list of class names to load plugins from.
+ * @param errors A mutable list to collect errors during plugin loading.
+ * @param classLoader A function that takes a class name and returns the corresponding Class object.
+ * @return A list of loaded plugins.
+ */
+private fun Plugin.Context.loadPlugins(
+    classNames: List<String>,
+    errors: MutableList<String>,
+    classLoader: (String) -> Class<*>,
+) = classNames.mapNotNull { className ->
+    try {
+        loadPlugin(classLoader(className), errors)
+    } catch (_: ClassNotFoundException) {
+        errors += "Plugin class not found: $className"
+        null
+    } catch (e: Exception) {
+        errors += "Failed to load plugin from class $className: ${e.message}"
+        null
+    }
+}
+
+/**
+ * Loads plugins from the specified files according to the following rules:
+ * 1. Each file must exist, be a file, and be readable.
+ * 2. Each file must have a manifest with the "Revenge-Plugin-Class" attribute.
+ * 3. All rules from [loadPlugin] apply to the class specified in the manifest.
+ * 
+ * @param pluginFiles The list of plugin files to load.
+ * @param errors A mutable list to collect errors during plugin loading.
+ * @return A list of loaded plugins.
+ */
+private fun Plugin.Context.loadPluginsFromFiles(pluginFiles: List<File>, errors: MutableList<String>): List<Plugin> {
+    val pluginFilePaths = pluginFiles
+        .filter { pluginFile ->
+            val exists = pluginFile.exists() && pluginFile.isFile && pluginFile.canRead()
+            if (!exists) errors += "Plugin file does not exist, is not a file or unreadable: ${pluginFile.absolutePath}"
+
+            return@filter exists
+        }.joinToString(File.pathSeparator) { it.absolutePath }
 
     val pluginClassNames = pluginFiles.mapNotNull { pluginFile ->
         val jarFile = JarFile(pluginFile)
@@ -57,7 +134,7 @@ internal fun PluginContext.initPlugins(
 
         manifest.mainAttributes.getValue("Revenge-Plugin-Class").also { attribute ->
             if (attribute == null) {
-                errors += "Revenge-Plugin-Class not found in manifest: ${pluginFile.absolutePath}"
+                errors += "'Revenge-Plugin-Class' not found in manifest: ${pluginFile.absolutePath}"
                 return@mapNotNull null
             }
         }
@@ -65,52 +142,28 @@ internal fun PluginContext.initPlugins(
 
     val pluginClassLoader =
         DexClassLoader(
-            pluginPaths,
-            File(appInfo.dataDir, "revenge_plugin_dex_cache").absolutePath,
+            pluginFilePaths,
+            File(applicationInfo.dataDir, "revenge_plugin_dex_cache").absolutePath,
             null,
-            classLoader // Provide plugin APIs.
+            classLoader // Has required classes from React Native or plugins.
         )
 
-    return pluginClassNames.mapNotNull {
-        val pluginClass = try {
-            pluginClassLoader.loadClass(it)
-        } catch (_: ClassNotFoundException) {
-            errors += "Plugin class not found: $it"
-            return@mapNotNull null
-        }
-
-        try {
-            val pluginBuilderFromField =
-                pluginClass.fields.find { field -> field.type.isPluginBuilder && field.canAccess() }
-                    ?.get(null) as? PluginBuilder
-
-            if (pluginBuilderFromField != null) {
-                return@mapNotNull with(pluginBuilderFromField) { build() }
-            }
-
-            val pluginBuilderFromMethod = pluginClass.methods.find { method ->
-                method.returnType.isPluginBuilder && method.parameterTypes.isEmpty() && method.canAccess()
-            }?.invoke(null) as? PluginBuilder
-
-            if (pluginBuilderFromMethod != null) {
-                return@mapNotNull with(pluginBuilderFromMethod) { build() }
-            }
-        } catch (e: Exception) {
-            errors += "Failed to initialize plugin ${it::class.java.name}: ${e.message}"
-        }
-
-        errors += "Plugin class $it does not have a valid plugin field or method"
-
-        return@mapNotNull null
-    } to errors
+    return loadPlugins(pluginClassNames, errors) { pluginClassLoader.loadClass(it) }
 }
 
-private val Class<*>.isPluginBuilder get() = PluginBuilder::class.java.isAssignableFrom(this)
+/**
+ * Loads internal plugins that are part of the Revenge Xposed module according to the rules
+ * from [loadPlugin] for each class.
+ * 
+ * @param errors A mutable list to collect errors during plugin loading.
+ * @return A list of loaded internal plugins.
+ */
+private fun Plugin.Context.loadPluginInternal(errors: MutableList<String>): List<Plugin> {
+    val internalPluginClassNames = listOf(
+        PluginsModule::class.java.canonicalName!!
+    )
 
-private fun Member.canAccess(): Boolean {
-    if (this is Method && parameterTypes.size != 0) return false
-
-    return Modifier.isStatic(modifiers) && Modifier.isPublic(modifiers)
+    return loadPlugins(internalPluginClassNames, errors) { Class.forName(it, true, classLoader) }
 }
 
 class PluginsModule : Module() {
@@ -121,34 +174,33 @@ class PluginsModule : Module() {
         builder.put("pluginErrors", buildJsonArray { addAll(pluginErrors) })
     }
 
-    override fun init(packageParam: LoadPackageParam) = with(packageParam) {
-        val pluginFilesJson = File(appInfo.dataDir, "files/revenge/plugins.json")
-        if (!pluginFilesJson.exists()) return@with
+    override fun init(packageParam: LoadPackageParam) {
+        val pluginFilesJson = File(packageParam.appInfo.dataDir, "files/revenge/plugins.json")
+        if (!pluginFilesJson.exists()) return
 
         val pluginFiles = try {
             Json.decodeFromString<List<String>>(pluginFilesJson.readText()).map { File(it) }
         } catch (_: Throwable) {
             pluginErrors += "Failed to parse plugins.json"
-            return@with
+            return
         }
 
-        // Here, plugins are initialized. Errors during initialization are collected below.
-        val (plugins, initPluginsErrors) = try {
-            initPlugins(pluginFiles)
+        // Here, plugins are loaded. Errors during loading are collected below.
+        val plugins = try {
+            with(Plugin.Context(packageParam.appInfo, packageParam.classLoader)) {
+                loadPluginInternal(pluginErrors) + loadPluginsFromFiles(pluginFiles, pluginErrors)
+            }
         } catch (e: Throwable) {
             pluginErrors += "Failed to load plugins: ${e.message}"
-            return@with
+            return
         }
 
-        // If there are errors during initialization, we add them to the list.
-        pluginErrors += initPluginsErrors
-
-        val pluginsReactPackage = pluginsReactPackage(plugins, classLoader)
+        val pluginsReactPackage = pluginsReactPackage(plugins, packageParam.classLoader)
 
         // Hooking the method that returns the list of React packages
         // and adding our own package to it.
         // Our own package is shipping the plugins as NativeModules.
-        val getPackagesMethod = classLoader
+        val getPackagesMethod = packageParam.classLoader
             .loadClass("com.discord.bridge.DCDReactNativeHost")
             .getDeclaredMethod("getPackages")
 
@@ -157,6 +209,7 @@ class PluginsModule : Module() {
                 @Suppress("UNCHECKED_CAST")
                 val reactPackages = XposedBridge.invokeOriginalMethod(
                     param.method, param.thisObject, param.args
+
                 ) as ArrayList<Any>
 
                 reactPackages.add(pluginsReactPackage)
@@ -164,5 +217,12 @@ class PluginsModule : Module() {
                 param.result = reactPackages
             }
         })
+    }
+}
+
+@Suppress("unused")
+val corePlugin by plugin {
+    init {
+        println("Init corePlugin")
     }
 }
