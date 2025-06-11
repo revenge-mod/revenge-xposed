@@ -16,6 +16,6 @@ dependencyResolutionManagement {
     }
 }
 
-include(":plugin", ":app")
+include(":app", ":plugin", ":example-plugin")
 
 rootProject.name = "revenge-xposed"
