@@ -15,7 +15,7 @@ import kotlin.system.exitProcess
 class LogBoxModule: Module() {
     lateinit var packageParam: XC_LoadPackage.LoadPackageParam
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
+    override fun init(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
         this@LogBoxModule.packageParam = packageParam
 
         val dcdReactNativeHostClass = classLoader.loadClass("com.discord.bridge.DCDReactNativeHost")

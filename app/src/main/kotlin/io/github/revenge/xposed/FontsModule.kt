@@ -50,7 +50,7 @@ class FontsModule: Module() {
         }
     }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
+    override fun init(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
         try {
             // Try to hook the new class (280201+)
             hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager\$Companion")
@@ -66,8 +66,7 @@ class FontsModule: Module() {
         if (!fontDefFile.exists()) return@with
 
         val fontDef = try {
-            val json = Json { ignoreUnknownKeys = true }
-            json.decodeFromString<FontDefinition>(fontDefFile.readText())
+            Json { ignoreUnknownKeys = true }.decodeFromString<FontDefinition>(fontDefFile.readText())
         } catch (_: Throwable) { return@with }
 
         fontsDownloadsDir = File(appInfo.dataDir, "files/pyoncord/downloads/fonts").apply { mkdirs() }
