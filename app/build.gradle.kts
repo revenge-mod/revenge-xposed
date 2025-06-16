@@ -43,8 +43,8 @@ android {
 }
 
 dependencies {
-    implementation(project(":plugin"))
     compileOnly("de.robv.android.xposed:api:82")
+    compileOnly("com.facebook.react:react-android:0.71.8")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1")

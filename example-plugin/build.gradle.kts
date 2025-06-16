@@ -20,7 +20,7 @@ android {
         jvmTarget = "1.8"
     }
 }
-
 dependencies {
-    compileOnly(project(":plugin"))
+    compileOnly("com.facebook.react:react-android:0.71.8")
+    compileOnly("de.robv.android.xposed:api:82")
 }

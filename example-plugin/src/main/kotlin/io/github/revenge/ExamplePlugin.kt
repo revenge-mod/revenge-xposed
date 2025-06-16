@@ -1,9 +1,29 @@
+package io.github.revenge
+
+import android.content.pm.ApplicationInfo
 import android.util.Log
-import io.github.revenge.Plugin.Companion.plugin
+import com.facebook.react.bridge.Callback
+import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactMethod
+import de.robv.android.xposed.XposedBridge
 
 @Suppress("unused")
-val corePlugin by plugin {
-    init { 
-        Log.i("ExamplePlugin", "Core plugin initialized")
+class ExamplePlugin(applicationInfo: ApplicationInfo, classLoader: ClassLoader) : ReactContextBaseJavaModule() {
+    override fun getName() = "Example plugin"
+
+    init {
+        Log.i(
+            name,
+            "Example plugin initialized in ${applicationInfo.sourceDir} with class loader $classLoader"
+        )
     }
+
+    @ReactMethod
+    fun getCallbacks() = listOf(
+        Callback { args ->
+            // Example callback function
+            println("Callback invoked")
+            XposedBridge.log("Callback invoked")
+        }
+    )
 }
