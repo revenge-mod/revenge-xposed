@@ -70,29 +70,23 @@ class Main : IXposedHookLoadPackage {
             LogBoxModule(),
         )
 
-        val catalystInstanceImpl = param.classLoader.loadClass("com.facebook.react.bridge.CatalystInstanceImpl")
+        val reactInstance = param.classLoader.loadClass("com.facebook.react.runtime.ReactInstance$1")
 
         for (module in modules) module.init(param)
 
-        val loadScriptFromAssets = catalystInstanceImpl.getDeclaredMethod(
+        val loadScriptFromAssets = reactInstance.getDeclaredMethod(
             "loadScriptFromAssets",
             AssetManager::class.java,
             String::class.java,
             Boolean::class.javaPrimitiveType
-        ).apply { isAccessible = true }
+        )
 
-        val loadScriptFromFile = catalystInstanceImpl.getDeclaredMethod(
+        val loadScriptFromFile = reactInstance.getDeclaredMethod(
             "loadScriptFromFile",
             String::class.java,
             String::class.java,
             Boolean::class.javaPrimitiveType
-        ).apply { isAccessible = true }
-
-        val setGlobalVariable = catalystInstanceImpl.getDeclaredMethod(
-            "setGlobalVariable",
-            String::class.java,
-            String::class.java
-        ).apply { isAccessible = true }
+        )
 
         val cacheDir = File(param.appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
         val filesDir = File(param.appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
@@ -168,16 +162,20 @@ class Main : IXposedHookLoadPackage {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 runBlocking { httpJob.join() }
 
-                XposedBridge.invokeOriginalMethod(
-                    setGlobalVariable,
-                    param.thisObject,
-                    arrayOf("__PYON_LOADER__", Json.encodeToString(buildJsonObject {
-                        put("loaderName", "RevengeXposed")
-                        put("loaderVersion", BuildConfig.VERSION_NAME)
-
-                        modules.forEach { it.buildJson(this) }
-                    }))
-                )
+                // TODO: Make this work again
+                // Solution: Inject a native module called RevengeGlobals that exposes a method that returns a Map
+                // Then in JS, we can call the method and set the globals accordingly
+                // Because setGlobalVariable no longer exists in bridgeless (unless we want to do CXX modules)
+                // XposedBridge.invokeOriginalMethod(
+                //     setGlobalVariable,
+                //     param.thisObject,
+                //     arrayOf("__PYON_LOADER__", Json.encodeToString(buildJsonObject {
+                //         put("loaderName", "RevengeXposed")
+                //         put("loaderVersion", BuildConfig.VERSION_NAME)
+                //
+                //         modules.forEach { it.buildJson(this) }
+                //     }))
+                // )
 
                 preloadsDir
                     .walk()
