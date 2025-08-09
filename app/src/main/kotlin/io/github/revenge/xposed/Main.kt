@@ -35,6 +35,10 @@ data class LoaderConfig(
 )
 
 class Main : IXposedHookLoadPackage {
+    private lateinit var preloadsDir: File
+    private lateinit var bundle: File
+    private lateinit var onActivityCreate: ((Activity) -> Unit) -> Unit
+    private lateinit var httpJob: Deferred<Unit>
 
     private val modules = listOf(
         ThemeModule(),
@@ -66,92 +70,31 @@ class Main : IXposedHookLoadPackage {
             }
         }
 
-        init(param) { callback ->
+        onActivityCreate = { callback ->
             activity?.let(callback) ?: onActivityCreateCallbacks.add(callback)
         }
+
+        init(param)
     }
 
     private fun init(
         param: XC_LoadPackage.LoadPackageParam,
-        onActivityCreate: ((Activity) -> Unit) -> Unit
     ) = with(param) {
-        listOf(
-            "com.facebook.react.runtime.ReactInstance$1",
-            "com.facebook.react.bridge.CatalystInstanceImpl"
-        ).mapNotNull { classLoader.safeLoadClass(it) }
-            .forEach { hookLoadScript(it, appInfo, onActivityCreate) }
-
-        modules.forEach { it.onInit(param) }
-
-        // Fix resource package name mismatch
-        if (packageName != "com.discord") {
-            Resources::class.java.hookMethod(
-                "getIdentifier",
-                String::class.java,
-                String::class.java,
-                String::class.java
-            ) {
-                before { mh ->
-                    if (mh.args[2] == packageName) mh.args[2] = "com.discord"
-                }
-            }
-        }
-    }
-
-    private fun hookLoadScript(
-        instance: Class<*>,
-        appInfo: ApplicationInfo,
-        onActivityCreate: ((Activity) -> Unit) -> Unit
-    ) {
-        val loadScriptFromAssets = instance.method(
-            "loadScriptFromAssets",
-            AssetManager::class.java,
-            String::class.java,
-            Boolean::class.javaPrimitiveType
-        )
-        val loadScriptFromFile = instance.method(
-            "loadScriptFromFile",
-            String::class.java,
-            String::class.java,
-            Boolean::class.javaPrimitiveType
-        )
-
         val cacheDir = File(appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
         val filesDir = File(appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
-        val preloadsDir = File(filesDir, "preloads").apply { mkdirs() }
-        val bundle = File(cacheDir, "bundle.js")
+
+        preloadsDir = File(filesDir, "preloads").apply { mkdirs() }
+        bundle = File(cacheDir, "bundle.js")
+
         val etag = File(cacheDir, "etag.txt")
         val configFile = File(filesDir, "loader.json")
-
-        val setGlobalVariable: (XC_MethodHook.MethodHookParam, String, String) -> Unit =
-            { param, key, json ->
-                runCatching {
-                    instance.method(
-                        "setGlobalVariable",
-                        String::class.java,
-                        String::class.java
-                    ).invoke(param.thisObject, key, json)
-                }.onFailure {
-                    // Bridgeless compatibility
-                    File(preloadsDir, "rv_globals_$key.js").apply {
-                        writeText("this[${Json.encodeToString(key)}]=$json")
-                        XposedBridge.invokeOriginalMethod(
-                            loadScriptFromFile,
-                            param.thisObject,
-                            arrayOf(absolutePath, absolutePath, param.args[2])
-                        )
-                        delete()
-                    }
-                }
-            }
 
         val config = runCatching {
             Json { ignoreUnknownKeys = true }
                 .decodeFromString<LoaderConfig>(configFile.readText())
         }.getOrDefault(LoaderConfig())
 
-        val scope = MainScope()
-        val httpJob = scope.async(Dispatchers.IO) {
+        httpJob = MainScope().async(Dispatchers.IO) {
             runCatching {
                 val client = HttpClient(CIO) {
                     expectSuccess = true
@@ -164,7 +107,7 @@ class Main : IXposedHookLoadPackage {
                 val url = config.customLoadUrl.takeIf { it.enabled }?.url
                     ?: "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
-                Log.e("Revenge", "Fetching JS bundle from $url")
+                Log.i("Revenge", "Fetching JS bundle from $url")
 
                 val response: HttpResponse = client.get(url) {
                     headers {
@@ -196,6 +139,67 @@ class Main : IXposedHookLoadPackage {
                 }
             }
         }
+
+        listOf(
+            "com.facebook.react.runtime.ReactInstance$1",
+            "com.facebook.react.bridge.CatalystInstanceImpl"
+        ).mapNotNull { classLoader.safeLoadClass(it) }
+            .forEach { hookLoadScript(it) }
+
+        modules.forEach { it.onInit(param) }
+
+        // Fix resource package name mismatch
+        if (packageName != "com.discord") {
+            Resources::class.java.hookMethod(
+                "getIdentifier",
+                String::class.java,
+                String::class.java,
+                String::class.java
+            ) {
+                before { mh ->
+                    if (mh.args[2] == packageName) mh.args[2] = "com.discord"
+                }
+            }
+        }
+    }
+
+    private fun hookLoadScript(
+        instance: Class<*>
+    ) {
+        val loadScriptFromAssets = instance.method(
+            "loadScriptFromAssets",
+            AssetManager::class.java,
+            String::class.java,
+            Boolean::class.javaPrimitiveType
+        )
+        val loadScriptFromFile = instance.method(
+            "loadScriptFromFile",
+            String::class.java,
+            String::class.java,
+            Boolean::class.javaPrimitiveType
+        )
+
+        val setGlobalVariable: (XC_MethodHook.MethodHookParam, String, String) -> Unit =
+            { param, key, json ->
+                runCatching {
+                    instance.method(
+                        "setGlobalVariable",
+                        String::class.java,
+                        String::class.java
+                    ).invoke(param.thisObject, key, json)
+                }.onFailure {
+                    // Bridgeless compatibility
+                    File(preloadsDir, "rv_globals_$key.js").apply {
+                        writeText("this[${Json.encodeToString(key)}]=$json")
+                        XposedBridge.invokeOriginalMethod(
+                            loadScriptFromFile,
+                            param.thisObject,
+                            arrayOf(absolutePath, absolutePath, param.args[2])
+                        )
+                        delete()
+                    }
+                }
+            }
 
         val patch = object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
