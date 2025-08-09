@@ -11,6 +11,12 @@ import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.xposed.modules.FontsModule
+import io.github.revenge.xposed.modules.LogBoxModule
+import io.github.revenge.xposed.modules.SysColorsModule
+import io.github.revenge.xposed.modules.ThemeModule
+import io.github.revenge.xposed.Utils.Companion.JSON
+import io.github.revenge.xposed.Utils.Log
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -34,11 +40,23 @@ data class LoaderConfig(
     val customLoadUrl: CustomLoadUrl = CustomLoadUrl()
 )
 
-class Main : IXposedHookLoadPackage {
+class Main : Module(), IXposedHookLoadPackage {
     private lateinit var preloadsDir: File
     private lateinit var bundle: File
     private lateinit var onActivityCreate: ((Activity) -> Unit) -> Unit
     private lateinit var httpJob: Deferred<Unit>
+
+    val PRELOADS_DIR = "preloads"
+
+    val ETAG_FILE = "etag.txt"
+    val CONFIG_FILE = "loader.json"
+
+    val LOADER_NAME = "RevengeXposed"
+
+    val DEFAULT_BUNDLE_URL = "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
+
+    val TARGET_PACKAGE = "com.discord"
+    val TARGET_ACTIVITY = "$TARGET_PACKAGE.react_activities.ReactActivity"
 
     private val modules = listOf(
         ThemeModule(),
@@ -47,16 +65,16 @@ class Main : IXposedHookLoadPackage {
         LogBoxModule()
     )
 
-    private fun buildLoaderJsonString(): String = Json.encodeToString(
+    private fun getPayloadString(): String = JSON.encodeToString(
         buildJsonObject {
-            put("loaderName", "RevengeXposed")
+            put("loaderName", LOADER_NAME)
             put("loaderVersion", BuildConfig.VERSION_NAME)
-            modules.forEach { it.buildJson(this) }
+            for (module in modules) module.buildPayload(this)
         }
     )
 
     override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) = with(param) {
-        val reactActivity = classLoader.safeLoadClass("com.discord.react_activities.ReactActivity")
+        val reactActivity = classLoader.safeLoadClass(TARGET_ACTIVITY)
             ?: return
 
         var activity: Activity? = null
@@ -64,8 +82,8 @@ class Main : IXposedHookLoadPackage {
 
         reactActivity.hookMethod("onCreate", Bundle::class.java) {
             before {
-                activity = it.thisObject as Activity
-                onActivityCreateCallbacks.forEach { cb -> cb(activity) }
+                activity = thisObject as Activity
+                for (cb in onActivityCreateCallbacks) cb(activity)
                 onActivityCreateCallbacks.clear()
             }
         }
@@ -80,18 +98,17 @@ class Main : IXposedHookLoadPackage {
     private fun init(
         param: XC_LoadPackage.LoadPackageParam,
     ) = with(param) {
-        val cacheDir = File(appInfo.dataDir, "cache/pyoncord").apply { mkdirs() }
-        val filesDir = File(appInfo.dataDir, "files/pyoncord").apply { mkdirs() }
+        val cacheDir = File(appInfo.dataDir, Constants.CACHE_DIR).apply { mkdirs() }
+        val filesDir = File(appInfo.dataDir, Constants.FILES_DIR).apply { mkdirs() }
 
-        preloadsDir = File(filesDir, "preloads").apply { mkdirs() }
-        bundle = File(cacheDir, "bundle.js")
+        preloadsDir = File(filesDir, PRELOADS_DIR).apply { mkdirs() }
+        bundle = File(cacheDir, Constants.BUNDLE_FILE)
 
-        val etag = File(cacheDir, "etag.txt")
-        val configFile = File(filesDir, "loader.json")
+        val etag = File(cacheDir, ETAG_FILE)
+        val configFile = File(filesDir, CONFIG_FILE)
 
         val config = runCatching {
-            Json { ignoreUnknownKeys = true }
-                .decodeFromString<LoaderConfig>(configFile.readText())
+            JSON.decodeFromString<LoaderConfig>(configFile.readText())
         }.getOrDefault(LoaderConfig())
 
         httpJob = MainScope().async(Dispatchers.IO) {
@@ -101,13 +118,13 @@ class Main : IXposedHookLoadPackage {
                     install(HttpTimeout) {
                         requestTimeoutMillis = if (bundle.exists()) 5000 else 10000
                     }
-                    install(UserAgent) { agent = "RevengeXposed" }
+                    install(UserAgent) { agent = Constants.USER_AGENT }
                 }
 
                 val url = config.customLoadUrl.takeIf { it.enabled }?.url
-                    ?: "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
+                    ?: DEFAULT_BUNDLE_URL
 
-                Log.i("Revenge", "Fetching JS bundle from $url")
+                Log.i("Fetching JS bundle from $url")
 
                 val response: HttpResponse = client.get(url) {
                     headers {
@@ -124,7 +141,7 @@ class Main : IXposedHookLoadPackage {
                 if (e is RedirectResponseException &&
                     e.response.status == HttpStatusCode.NotModified
                 ) {
-                    Log.e("Revenge", "Server responded with 304 - no changes")
+                    Log.i("Server responded with 304 - no changes")
                 } else {
                     onActivityCreate { activity ->
                         activity.runOnUiThread {
@@ -135,7 +152,7 @@ class Main : IXposedHookLoadPackage {
                             ).show()
                         }
                     }
-                    Log.e("Revenge", "Failed to download bundle", e)
+                    Log.e("Failed to download bundle", e)
                 }
             }
         }
@@ -146,18 +163,18 @@ class Main : IXposedHookLoadPackage {
         ).mapNotNull { classLoader.safeLoadClass(it) }
             .forEach { hookLoadScript(it) }
 
-        modules.forEach { it.onInit(param) }
+        for (module in modules) module.onInit(param)
 
         // Fix resource package name mismatch
-        if (packageName != "com.discord") {
+        if (packageName != TARGET_PACKAGE) {
             Resources::class.java.hookMethod(
                 "getIdentifier",
                 String::class.java,
                 String::class.java,
                 String::class.java
             ) {
-                before { mh ->
-                    if (mh.args[2] == packageName) mh.args[2] = "com.discord"
+                before {
+                    if (args[2] == packageName) args[2] = TARGET_PACKAGE
                 }
             }
         }
@@ -190,7 +207,7 @@ class Main : IXposedHookLoadPackage {
                 }.onFailure {
                     // Bridgeless compatibility
                     File(preloadsDir, "rv_globals_$key.js").apply {
-                        writeText("this[${Json.encodeToString(key)}]=$json")
+                        writeText("this[${JSON.encodeToString(key)}]=$json")
                         XposedBridge.invokeOriginalMethod(
                             loadScriptFromFile,
                             param.thisObject,
@@ -204,7 +221,7 @@ class Main : IXposedHookLoadPackage {
         val patch = object : XC_MethodHook() {
             override fun beforeHookedMethod(param: MethodHookParam) {
                 runBlocking { httpJob.join() }
-                setGlobalVariable(param, "__PYON_LOADER__", buildLoaderJsonString())
+                setGlobalVariable(param, "__PYON_LOADER__", getPayloadString())
 
                 preloadsDir.walk()
                     .filter { it.isFile && it.extension == "js" }
@@ -224,37 +241,9 @@ class Main : IXposedHookLoadPackage {
             }
         }
 
-        listOf(loadScriptFromAssets, loadScriptFromFile).forEach { it.hook(patch) }
+        for (method in listOf(loadScriptFromAssets, loadScriptFromFile)) method.hook(patch)
     }
 
     private fun ClassLoader.safeLoadClass(name: String): Class<*>? =
         runCatching { loadClass(name) }.getOrNull()
-
-    private fun Class<*>.method(
-        name: String,
-        vararg params: Class<*>?
-    ): java.lang.reflect.Method =
-        getDeclaredMethod(name, *params).apply { isAccessible = true }
-
-    private fun java.lang.reflect.Method.hook(hook: XC_MethodHook) =
-        XposedBridge.hookMethod(this, hook)
-
-    private fun Class<*>.hookMethod(
-        name: String,
-        vararg params: Class<*>?,
-        block: MethodHookBuilder.() -> Unit
-    ) = method(name, *params).hook(MethodHookBuilder().apply(block).build())
-
-    private class MethodHookBuilder {
-        private var beforeHook: ((XC_MethodHook.MethodHookParam) -> Unit)? = null
-        fun before(block: (XC_MethodHook.MethodHookParam) -> Unit) {
-            beforeHook = block
-        }
-
-        fun build() = object : XC_MethodHook() {
-            override fun beforeHookedMethod(param: MethodHookParam) {
-                beforeHook?.invoke(param)
-            }
-        }
-    }
 }

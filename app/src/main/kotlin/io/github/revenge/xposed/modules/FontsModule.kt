@@ -1,7 +1,4 @@
-// credits to janisslsm from his PR: https://github.com/vendetta-mod/VendettaXposed/pull/17
-// hooks are modified function from RN codebase
-
-package io.github.revenge.xposed
+package io.github.revenge.xposed.modules
 
 import android.content.res.AssetManager
 import android.os.Build
@@ -9,16 +6,18 @@ import android.graphics.Typeface
 import android.graphics.Typeface.CustomFallbackBuilder
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
-import android.util.Log
 import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.xposed.Constants
+import io.github.revenge.xposed.Module
+import io.github.revenge.xposed.Utils.Log
+import io.github.revenge.xposed.Utils.Companion.JSON
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
 import java.io.IOException
 import java.io.File
 import kotlinx.coroutines.*
-
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
@@ -26,6 +25,7 @@ import io.ktor.client.engine.cio.*
 import io.ktor.client.statement.*
 import io.ktor.client.plugins.*
 import io.ktor.http.*
+import java.lang.StringBuilder
 
 @Serializable
 data class FontDefinition(
@@ -44,81 +44,15 @@ class FontsModule: Module() {
     private lateinit var fontsDownloadsDir: File
     private var fontsAbsPath: String? = null
 
-    override fun buildJson(builder: JsonObjectBuilder) {
+    override fun buildPayload(builder: JsonObjectBuilder) {
         builder.apply {
             put("fontPatch", 2)
         }
     }
 
     override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
-        try {
-            // Try to hook the new class (280201+)
-            hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager\$Companion")
-        } catch (e: Throwable) {
-            when (e) {
-                // Hook old class (280200-)
-                is NoClassDefFoundError, is XposedHelpers.ClassNotFoundError -> hookClass(classLoader, "com.facebook.react.views.text.ReactFontManager")
-                else -> throw e
-            }
-        }
-
-        val fontDefFile = File(appInfo.dataDir, "files/pyoncord/fonts.json")
-        if (!fontDefFile.exists()) return@with
-
-        val fontDef = try {
-            val json = Json { ignoreUnknownKeys = true }
-            json.decodeFromString<FontDefinition>(fontDefFile.readText())
-        } catch (_: Throwable) { return@with }
-
-        fontsDownloadsDir = File(appInfo.dataDir, "files/pyoncord/downloads/fonts").apply { mkdirs() }
-        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
-        fontsAbsPath = fontsDir.absolutePath + "/"
-
-        fontsDir.listFiles()?.forEach { file ->
-            val fileName = file.name
-            if (!fileName.startsWith(".")) {
-                val fontName = fileName.split('.')[0]
-                if (fontDef.main.keys.none { it == fontName }) {
-                    Log.i("Revenge", "Deleting font file: $fileName")
-                    file.delete()
-                }
-            }
-        }
-
-        // These files should be downloaded by the JS side, but oh well
-        CoroutineScope(Dispatchers.IO).launch {
-            fontDef.main.keys.map { name ->
-                async {
-                    val url = fontDef.main.getValue(name)
-                    try {
-                        Log.i("Revenge", "Downloading $name from $url")
-                        val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
-                        if (file.exists()) return@async
-
-                        val client = HttpClient(CIO) {
-                            install(UserAgent) { agent = "RevengeXposed" }
-                        }
-
-                        val response: HttpResponse = client.get(url)
-
-                        if (response.status == HttpStatusCode.OK) {
-                            file.writeBytes(response.body())
-                        }
-
-                        return@async
-                    } catch (e: Throwable) {
-                        Log.e("Revenge", "Failed to download fonts ($name from $url)", e)
-                    }
-                }
-            }.awaitAll()
-        } 
-
-        return@with
-    }
-
-    private fun hookClass(classLoader: ClassLoader, className: String) {
         XposedHelpers.findAndHookMethod(
-            className,
+            "com.facebook.react.views.text.ReactFontManager\$Companion",
             classLoader,
             "createAssetTypeface",
             String::class.java,
@@ -131,7 +65,58 @@ class FontsModule: Module() {
                     val assetManager: AssetManager = param.args[2] as AssetManager
                     return createAssetTypeface(fontFamilyName, style, assetManager)
                 }
-            })
+        })
+
+        val fontDefFile = File(appInfo.dataDir, "${Constants.FILES_DIR}/fonts.json")
+        if (!fontDefFile.exists()) return@with
+
+        val fontDef = try {
+            JSON.decodeFromString<FontDefinition>(fontDefFile.readText())
+        } catch (_: Throwable) { return@with }
+
+        fontsDownloadsDir = File(appInfo.dataDir, "${Constants.FILES_DIR}/downloads/fonts").apply { mkdirs() }
+        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
+        fontsAbsPath = fontsDir.absolutePath + "/"
+
+        fontsDir.listFiles()?.forEach { file ->
+            val fileName = file.name
+            if (!fileName.startsWith(".")) {
+                val fontName = fileName.split('.')[0]
+                if (fontDef.main.keys.none { it == fontName }) {
+                    Log.i("Deleting font file: $fileName")
+                    file.delete()
+                }
+            }
+        }
+
+        // These files should be downloaded by the JS side, but oh well
+        CoroutineScope(Dispatchers.IO).launch {
+            fontDef.main.keys.map { name ->
+                async {
+                    val url = fontDef.main.getValue(name)
+                    try {
+                        Log.i("Downloading $name from $url")
+                        val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
+                        if (file.exists()) return@async
+
+                        val client = HttpClient(CIO) {
+                            install(UserAgent) { agent = Constants.USER_AGENT }
+                        }
+
+                        val response: HttpResponse = client.get(url)
+
+                        if (response.status == HttpStatusCode.OK)
+                            file.writeBytes(response.body())
+
+                        return@async
+                    } catch (e: Throwable) {
+                        Log.e("Failed to download fonts ($name from $url)", e)
+                    }
+                }
+            }.awaitAll()
+        } 
+
+        return@with
     }
 
     private fun createAssetTypefaceWithFallbacks(
@@ -152,13 +137,11 @@ class FontsModule: Module() {
                         val family = FontFamily.Builder(font).build()
                         fontFamilies.add(family)
                     }
-                } catch (e: Throwable) {
-                    // ignore
-                }
+                } catch (_: Throwable) {}
 
                 for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
                     for (fileExtension in FILE_EXTENSIONS) {
-                        val fileName = java.lang.StringBuilder()
+                        val fileName = StringBuilder()
                             .append(fontRootPath)
                             .append(fontFamilyName)
                             .append(fileExtension)
@@ -168,10 +151,10 @@ class FontsModule: Module() {
                             val font = builder.build()
                             val family = FontFamily.Builder(font).build()
                             fontFamilies.add(family)
-                        } catch (e: java.lang.RuntimeException) {
+                        } catch (_: RuntimeException) {
                             // If the typeface asset does not exist, try another extension.
                             continue
-                        } catch (e: IOException) {
+                        } catch (_: IOException) {
                             // If the font asset does not exist, try another extension.
                             continue
                         }
@@ -180,9 +163,8 @@ class FontsModule: Module() {
             }
 
             // If there's some problem constructing fonts, fall back to the default behavior.
-            if (fontFamilies.size == 0) {
-                return createAssetTypeface(fontFamilyNames[0], style, assetManager)
-            }
+            if (fontFamilies.isEmpty()) return createAssetTypeface(fontFamilyNames[0], style, assetManager)
+
             val fallbackBuilder = CustomFallbackBuilder(fontFamilies[0])
             for (i in 1 until fontFamilies.size) {
                 fallbackBuilder.addCustomFallback(fontFamilies[i])
@@ -193,11 +175,11 @@ class FontsModule: Module() {
     }
 
     private fun createAssetTypeface(
-        fontFamilyName_: String, style: Int, assetManager: AssetManager
+        fontFamilyName: String, style: Int, assetManager: AssetManager
     ): Typeface? {
         // This logic attempts to safely check if the frontend code is attempting to use
         // fallback fonts, and if it is, to use the fallback typeface creation logic.
-        var fontFamilyName: String = fontFamilyName_
+        var fontFamilyName: String = fontFamilyName
         val fontFamilyNames =
             fontFamilyName.split(",".toRegex())
                 .dropLastWhile { it.isEmpty() }
@@ -226,15 +208,13 @@ class FontsModule: Module() {
                 if (!file.exists()) throw Exception()
                 return Typeface.createFromFile(file.absolutePath)
             }
-        } catch (e: Throwable) {
-            // ignore
-        }
+        } catch (_: Throwable) {}
 
         // Lastly, after all those checks above, this is the original RN logic for
         // getting the typeface.
         for (fontRootPath in arrayOf(fontsAbsPath, FONTS_ASSET_PATH).filterNotNull()) {
             for (fileExtension in FILE_EXTENSIONS) {
-                val fileName = java.lang.StringBuilder()
+                val fileName = StringBuilder()
                     .append(fontRootPath)
                     .append(fontFamilyName)
                     .append(extension)
@@ -246,7 +226,7 @@ class FontsModule: Module() {
                         Typeface.createFromFile(fileName)
                     else
                         Typeface.createFromAsset(assetManager, fileName)
-                } catch (e: java.lang.RuntimeException) {
+                } catch (_: RuntimeException) {
                     // If the typeface asset does not exist, try another extension.
                     continue
                 }

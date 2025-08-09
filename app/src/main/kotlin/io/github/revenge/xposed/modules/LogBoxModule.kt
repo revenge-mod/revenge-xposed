@@ -1,14 +1,16 @@
-package io.github.revenge.xposed
+package io.github.revenge.xposed.modules
 
 import android.app.AlertDialog
 import android.app.AndroidAppHelper
 import android.content.Context
 import android.content.Intent
-import android.util.Log
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.xposed.Constants
+import io.github.revenge.xposed.Module
+import io.github.revenge.xposed.Utils
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -59,7 +61,7 @@ class LogBoxModule: Module() {
                             }
                         }
                     } catch (ex: Exception) {
-                        Log.e("Revenge", "Failed to show dev options dialog: $ex")
+                        Utils.Log.e("Failed to show dev options dialog: $ex")
                         alertDialog = null
                     }
 
@@ -73,9 +75,7 @@ class LogBoxModule: Module() {
         XposedBridge.hookMethod(
             handleReloadJSMethod,
             object : XC_MethodHook() {
-                override fun beforeHookedMethod(param: MethodHookParam) {
-                    reloadApp()
-                }
+                override fun beforeHookedMethod(param: MethodHookParam) = reloadApp()
             }
         )
 
@@ -91,10 +91,8 @@ class LogBoxModule: Module() {
                         reloadApp()
                     }
                     1 -> {
-                        val bundleFile = File(packageParam.appInfo.dataDir, "cache/pyoncord/bundle.js")
-                        if (bundleFile.exists()) {
-                            bundleFile.delete()
-                        }
+                        val bundleFile = File(packageParam.appInfo.dataDir, "${Constants.CACHE_DIR}/${Constants.BUNDLE_FILE}")
+                        if (bundleFile.exists()) bundleFile.delete()
 
                         reloadApp()
                     }

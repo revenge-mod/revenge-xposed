@@ -1,18 +1,18 @@
-package io.github.revenge.xposed
+package io.github.revenge.xposed.modules
 
 import android.content.Context
-import android.graphics.Color
 import android.content.res.Resources
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.io.File
 import kotlinx.serialization.json.*
+import androidx.core.graphics.toColorInt
+import io.github.revenge.xposed.Constants
+import io.github.revenge.xposed.Module
+import io.github.revenge.xposed.Utils.Companion.JSON
 
 @Serializable
 data class Author(
@@ -41,16 +41,20 @@ class ThemeModule : Module() {
     private var theme: Theme? = null
     private val rawColorMap = mutableMapOf<String, Int>()
 
+    val THEME_FILE = "current-theme.json"
+
     @ExperimentalSerializationApi
-    override fun buildJson(builder: JsonObjectBuilder) {
+    override fun buildPayload(builder: JsonObjectBuilder) {
         builder.apply {
             put("hasThemeSupport", true)
             if (theme != null) 
-                put("storedTheme", Json.encodeToJsonElement<Theme>(theme!!))
+                put("storedTheme", JSON.encodeToJsonElement<Theme>(theme!!))
             else
                 put("storedTheme", null)
         }
     }
+
+    private fun String.fromScreamingSnakeToCamelCase() = this.split("_").joinToString("") { it -> it.lowercase().replaceFirstChar { it.uppercase() } }
 
     override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) {
         param = packageParam
@@ -66,21 +70,13 @@ class ThemeModule : Module() {
     }
 
     private fun getTheme(): Theme? {
-        val filesDir = File(param.appInfo.dataDir, "files").apply { mkdirs() }
-        val pyonDir = File(filesDir, "pyoncord").apply { mkdirs() }
-        val themeFile = File(pyonDir, "current-theme.json")
-
-        val legacyThemeFile = File(filesDir, "vendetta_theme.json")
-        if (legacyThemeFile.isValidish() && !themeFile.isValidish()) {
-            legacyThemeFile.copyTo(themeFile, overwrite = true)
-        }
-
+        val themeFile = File(param.appInfo.dataDir, "${Constants.FILES_DIR}/${THEME_FILE}")
         if (!themeFile.isValidish()) return null
         
         return try {
             val themeText = themeFile.readText()
-            Json { ignoreUnknownKeys = true }.decodeFromString<Theme>(themeText)
-        } catch (e: Exception) { null }
+            JSON.decodeFromString<Theme>(themeText)
+        } catch (_: Exception) { null }
     }
 
     fun hookTheme() {
@@ -99,7 +95,7 @@ class ThemeModule : Module() {
         // Apply semanticColors
         theme.data.semanticColors?.forEach { (key, value) ->
             // TEXT_NORMAL -> getTextNormal
-            val methodName = "get${key.split("_").joinToString("") { it.lowercase().replaceFirstChar { it.uppercase() } }}"
+            val methodName = "get${key.fromScreamingSnakeToCamelCase()}"
             value.forEachIndexed { index, v ->
                 when (index) {
                     0 -> hookThemeMethod(darkTheme, methodName, hexStringToColorInt(v))
@@ -144,22 +140,19 @@ class ThemeModule : Module() {
             // Rearrange RRGGBBAA -> AARRGGBB so parseColor() is happy
             val alpha = hexString.substring(7, 9)
             val rrggbb = hexString.substring(1, 7)
-            Color.parseColor("#$alpha$rrggbb")
-        } else Color.parseColor(hexString)
+            "#$alpha$rrggbb".toColorInt()
+        } else hexString.toColorInt()
     }
 
     private fun hookThemeMethod(themeClass: Class<*>, methodName: String, themeValue: Int) {
         try {
             themeClass.getDeclaredMethod(methodName).let { method ->
-                // Log.i("Hooking $methodName -> ${themeValue.toString(16)}")
                 XposedBridge.hookMethod(method, object : XC_MethodHook() {
                     override fun beforeHookedMethod(param: MethodHookParam) {
                         param.result = themeValue
                     }
                 })
             }
-        } catch (ex: NoSuchMethodException) {
-            // do nothing
-        }
+        } catch (_: NoSuchMethodException) {}
     }
 }
