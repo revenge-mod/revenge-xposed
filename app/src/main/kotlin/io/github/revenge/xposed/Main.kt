@@ -1,11 +1,9 @@
 package io.github.revenge.xposed
 
 import android.app.Activity
-import android.content.pm.ApplicationInfo
 import android.content.res.AssetManager
 import android.content.res.Resources
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
@@ -13,6 +11,7 @@ import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.revenge.xposed.modules.FontsModule
 import io.github.revenge.xposed.modules.LogBoxModule
+import io.github.revenge.xposed.modules.NativeBridgeModule
 import io.github.revenge.xposed.modules.SysColorsModule
 import io.github.revenge.xposed.modules.ThemeModule
 import io.github.revenge.xposed.Utils.Companion.JSON
@@ -62,7 +61,8 @@ class Main : Module(), IXposedHookLoadPackage {
         ThemeModule(),
         SysColorsModule(),
         FontsModule(),
-        LogBoxModule()
+        LogBoxModule(),
+        NativeBridgeModule()
     )
 
     private fun getPayloadString(): String = JSON.encodeToString(
