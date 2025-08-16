@@ -2,10 +2,15 @@ package io.github.revenge.xposed.modules
 
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.revenge.xposed.Module
-import io.github.revenge.xposed.Utils.Log
 import java.lang.reflect.Method
 
-typealias BridgeMethodCallback = (HashMap<String, Any>) -> Any?
+/**
+ * See for possible return types:
+ * https://github.com/facebook/react-native/blob/c23e84ae9/packages/react-native/ReactAndroid/src/main/java/com/facebook/react/bridge/Arguments.kt#L19
+ */
+typealias BridgeMethodCallback = (args: BridgeMethodArgs) -> Any?
+
+typealias BridgeMethodArgs = ArrayList<Any>
 
 class NativeBridgeModule : Module() {
 
@@ -16,7 +21,10 @@ class NativeBridgeModule : Module() {
     private lateinit var argumentsMakeNativeObject: Method
 
     companion object {
-        private val BRIDGE_CALL_KEY = "revenge"
+        private val CALL_DATA_KEY = "revenge"
+        private val METHOD_NAME_KEY = "method"
+        private val METHOD_ARGS_KEY = "args"
+
         private val methods = mutableMapOf<String, BridgeMethodCallback>(
             "revenge.test" to {
                 mapOf(
@@ -26,7 +34,8 @@ class NativeBridgeModule : Module() {
                     "object" to mapOf("nested" to true),
                     "boolean" to false
                 )
-            }
+            },
+            "revenge.test2" to { it }
         )
 
         fun registerMethod(name: String, callback: BridgeMethodCallback) {
@@ -59,48 +68,51 @@ class NativeBridgeModule : Module() {
         classLoader.loadClass("com.horcrux.svg.RNSVGRenderableManager")
             .hookMethod("getBBox", Double::class.javaObjectType, readableMapClass) {
                 before {
-                    val map = args[1]!!
-                    callBridgeMethod(map)?.let { result = it.toNativeObject() }
+                    callBridgeMethod(readableMapToHashMap(args[1]!!))
+                        ?.let { result = it.toNativeObject() }
                 }
             }
 
         classLoader.loadClass("com.facebook.react.modules.blob.FileReaderModule")
             .hookMethod("readAsDataURL", readableMapClass, promiseClass) {
                 before {
-                    val map = args[0]!!
-                    callBridgeMethod(map)?.let { ret ->
-                        promiseResolveMethod.invoke(args[1], ret.toNativeObject())
-                        result = null
-                    }
+                    callBridgeMethod(readableMapToHashMap(args[0]!!))
+                        ?.let { ret ->
+                            promiseResolveMethod.invoke(args[1], ret.toNativeObject())
+                            result = null
+                        }
                 }
             }
 
         return@with
     }
 
-    private fun callBridgeMethod(map: Any): Map<String, Any?>? = try {
-        val method = getBridgeCallMethod(map) ?: return null
-        val ret = method(getBridgeCallArgs(map)).toNativeObject()
+    private fun readableMapToHashMap(map: Any): HashMap<String, Any?> {
+        @Suppress("UNCHECKED_CAST")
+        return readableMapToHashMapMethod.invoke(map) as HashMap<String, Any?>
+    }
+
+    private fun callBridgeMethod(hashMap: HashMap<String, Any?>): Map<String, Any?>? = try {
+        val (method, args) = getBridgeCallData(hashMap) ?: return null
+        val ret = method(args).toNativeObject()
         mapOf("result" to ret)
-    } catch (e: Error) {
+    } catch (e: Throwable) {
         mapOf("error" to e.toString())
     }
 
-    private fun getBridgeCallArgs(map: Any): HashMap<String, Any> {
+    private fun getBridgeCallData(hashMap: HashMap<String, Any?>): Pair<BridgeMethodCallback, BridgeMethodArgs>? {
         @Suppress("UNCHECKED_CAST")
-        val args = readableMapToHashMapMethod.invoke(map) as HashMap<String, Any>
-        args.remove(BRIDGE_CALL_KEY)
-        return args
-    }
+        val data = hashMap[CALL_DATA_KEY] as HashMap<String, Any?>?
+        data ?: return null
 
-    private fun getBridgeCallMethod(map: Any): BridgeMethodCallback? = try {
-        val name = readableMapGetStringMethod.invoke(map, BRIDGE_CALL_KEY) as? String
-            ?: return null
+        @Suppress("UNCHECKED_CAST")
+        val name = data[METHOD_NAME_KEY] as String
+        val method = methods[name]
+        method ?: throw Error("Method not registered: $name")
 
-        methods[name] ?: throw Error("Method $name not registered")
-    } catch (e: RuntimeException) {
-        // UnexpectedNativeTypeException : RuntimeException
-        Log.e(e.toString())
-        throw Error("Bad method name")
+        @Suppress("UNCHECKED_CAST")
+        val args = data[METHOD_ARGS_KEY] as BridgeMethodArgs
+
+        return Pair(method, args)
     }
 }
