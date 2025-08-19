@@ -1,7 +1,17 @@
 package io.github.revenge.xposed.modules
 
+import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.os.Build
+import android.widget.Toast
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.xposed.BuildConfig
+import io.github.revenge.xposed.Constants
 import io.github.revenge.xposed.Module
+import java.io.File
 import java.lang.reflect.Method
 
 /**
@@ -24,17 +34,51 @@ class NativeBridgeModule : Module() {
         private val METHOD_NAME_KEY = "method"
         private val METHOD_ARGS_KEY = "args"
 
-        private val methods = mutableMapOf<String, BridgeMethodCallback>(
+        private fun File.openFileGuarded() {
+            if (!this.exists()) throw Error("Path does not exist: $path")
+            if (!this.isFile()) throw Error("Path is not a file: $path")
+        }
+
+        private val methods: MutableMap<String, BridgeMethodCallback> = mutableMapOf(
+            "revenge.info" to {
+                mapOf(
+                    "name" to Constants.LOADER_NAME,
+                    "version" to BuildConfig.VERSION_CODE
+                )
+            },
             "revenge.test" to {
                 mapOf(
                     "string" to "string",
                     "number" to 7256,
                     "array" to listOf("testing", 527737, listOf(true)),
                     "object" to mapOf("nested" to true),
-                    "boolean" to false
+                    "boolean" to false,
+                    "args" to it,
                 )
             },
-            "revenge.test2" to { it }
+            "revenge.fs.delete" to {
+                val (path) = it
+                File(path as String).run {
+                    if (this.isDirectory()) this.deleteRecursively()
+                    else this.delete()
+                }
+            },
+            "revenge.fs.exists" to {
+                val (path) = it
+                File(path as String).exists()
+            },
+            "revenge.fs.read" to { it ->
+                val (path) = it
+                val file = File(path as String).apply { openFileGuarded() }
+
+                file.bufferedReader().use { it.readText() }
+            },
+            "revenge.fs.write" to { it ->
+                val (path, contents) = it
+                val file = File(path as String).apply { openFileGuarded() }
+
+                file.writeText(contents as String)
+            }
         )
 
         fun registerMethod(name: String, callback: BridgeMethodCallback) {
@@ -84,6 +128,38 @@ class NativeBridgeModule : Module() {
             }
 
         return@with
+    }
+
+    override fun onCreate(activity: Activity) = with(activity) {
+        registerMethod("revenge.alertError") {
+            val (error, version) = it
+            val app = activity.getAppInfo()
+            val errorString = "$error"
+
+            val clipboard = applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Stack Trace", errorString)
+
+            AlertDialog.Builder(activity)
+                .setTitle("Revenge Error")
+                .setMessage("""
+                    Revenge: $version
+                    ${app.name}: ${app.version} (${app.versionCode})
+                    Device: ${Build.MANUFACTURER} ${Build.MODEL}
+                    
+                    
+                """.trimIndent() + errorString)
+                .setPositiveButton("OK") { dialog, _ ->
+                    dialog.dismiss()
+                }
+                .setNeutralButton("Copy") { dialog, _ ->
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(applicationContext, "Copied stack trace", Toast.LENGTH_SHORT).show()
+                    dialog.dismiss()
+                }
+                .show()
+
+            null
+        }
     }
 
     private fun readableMapToHashMap(map: Any): HashMap<String, Any?> {
