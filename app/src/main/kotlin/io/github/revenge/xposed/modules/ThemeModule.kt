@@ -56,7 +56,7 @@ class ThemeModule : Module() {
 
     private fun String.fromScreamingSnakeToCamelCase() = this.split("_").joinToString("") { it -> it.lowercase().replaceFirstChar { it.uppercase() } }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) {
+    override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) {
         param = packageParam
         theme = getTheme()
         hookTheme()
@@ -70,7 +70,7 @@ class ThemeModule : Module() {
     }
 
     private fun getTheme(): Theme? {
-        val themeFile = File(param.appInfo.dataDir, "${Constants.FILES_DIR}/${THEME_FILE}")
+        val themeFile = File(param.appInfo.dataDir, "${Constants.FILES_DIR}/${THEME_FILE}").apply { asFile() }
         if (!themeFile.isValidish()) return null
         
         return try {

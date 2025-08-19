@@ -42,8 +42,12 @@ data class LoaderConfig(
 class Main : Module(), IXposedHookLoadPackage {
     private lateinit var preloadsDir: File
     private lateinit var bundle: File
-    private lateinit var onActivityCreate: ((Activity) -> Unit) -> Unit
     private lateinit var httpJob: Deferred<Unit>
+
+    private lateinit var activity: Activity
+    private val onActivityCreate: ((Activity) -> Unit) -> Unit =
+        { if (::activity.isInitialized) it(activity) else onActivityCreateCallbacks.add(it) }
+    private val onActivityCreateCallbacks = mutableSetOf<(Activity) -> Unit>()
 
     val PRELOADS_DIR = "preloads"
 
@@ -77,35 +81,33 @@ class Main : Module(), IXposedHookLoadPackage {
         val reactActivity = classLoader.safeLoadClass(TARGET_ACTIVITY)
             ?: return
 
-        var activity: Activity? = null
-        val onActivityCreateCallbacks = mutableSetOf<(Activity) -> Unit>()
-
         reactActivity.hookMethod("onCreate", Bundle::class.java) {
             before {
                 activity = thisObject as Activity
-                for (cb in onActivityCreateCallbacks) cb(activity)
-                onActivityCreateCallbacks.clear()
+                this@Main.onCreate(activity)
             }
-        }
-
-        onActivityCreate = { callback ->
-            activity?.let(callback) ?: onActivityCreateCallbacks.add(callback)
         }
 
         init(param)
     }
 
+    override fun onCreate(activity: Activity) {
+        for (module in modules) module.onCreate(activity)
+        for (cb in onActivityCreateCallbacks) cb(activity)
+        onActivityCreateCallbacks.clear()
+    }
+
     private fun init(
         param: XC_LoadPackage.LoadPackageParam,
     ) = with(param) {
-        val cacheDir = File(appInfo.dataDir, Constants.CACHE_DIR).apply { mkdirs() }
-        val filesDir = File(appInfo.dataDir, Constants.FILES_DIR).apply { mkdirs() }
+        val cacheDir = File(appInfo.dataDir, Constants.CACHE_DIR).apply { asDir() }
+        val filesDir = File(appInfo.dataDir, Constants.FILES_DIR).apply { asDir() }
 
-        preloadsDir = File(filesDir, PRELOADS_DIR).apply { mkdirs() }
-        bundle = File(cacheDir, Constants.BUNDLE_FILE)
+        preloadsDir = File(filesDir, PRELOADS_DIR).apply { asDir() }
+        bundle = File(cacheDir, Constants.BUNDLE_FILE).apply { asFile() }
 
-        val etag = File(cacheDir, ETAG_FILE)
-        val configFile = File(filesDir, CONFIG_FILE)
+        val etag = File(cacheDir, ETAG_FILE).apply { asFile() }
+        val configFile = File(filesDir, CONFIG_FILE).apply { asFile() }
 
         val config = runCatching {
             JSON.decodeFromString<LoaderConfig>(configFile.readText())
@@ -163,7 +165,7 @@ class Main : Module(), IXposedHookLoadPackage {
         ).mapNotNull { classLoader.safeLoadClass(it) }
             .forEach { hookLoadScript(it) }
 
-        for (module in modules) module.onInit(param)
+        for (module in modules) module.onLoad(param)
 
         // Fix resource package name mismatch
         if (packageName != TARGET_PACKAGE) {

@@ -1,15 +1,28 @@
 package io.github.revenge.xposed
 
+import android.app.Activity
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import java.lang.reflect.Method
 import kotlinx.serialization.json.JsonObjectBuilder
+import java.io.File
 
 abstract class Module {
     open fun buildPayload(builder: JsonObjectBuilder) {}
 
-    open fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) {}
+    open fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) {}
+
+    open fun onCreate(activity: Activity) {}
+
+    protected fun File.asDir() {
+        if (!this.isDirectory()) this.delete()
+        this.mkdirs()
+    }
+
+    protected fun File.asFile() {
+        if (!this.isFile()) this.deleteRecursively()
+    }
 
     protected fun Class<*>.method(
         name: String,

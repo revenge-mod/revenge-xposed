@@ -50,7 +50,7 @@ class FontsModule: Module() {
         }
     }
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
+    override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with (packageParam) {
         XposedHelpers.findAndHookMethod(
             "com.facebook.react.views.text.ReactFontManager\$Companion",
             classLoader,
@@ -67,15 +67,15 @@ class FontsModule: Module() {
                 }
         })
 
-        val fontDefFile = File(appInfo.dataDir, "${Constants.FILES_DIR}/fonts.json")
+        val fontDefFile = File(appInfo.dataDir, "${Constants.FILES_DIR}/fonts.json").apply { asFile() }
         if (!fontDefFile.exists()) return@with
 
         val fontDef = try {
             JSON.decodeFromString<FontDefinition>(fontDefFile.readText())
         } catch (_: Throwable) { return@with }
 
-        fontsDownloadsDir = File(appInfo.dataDir, "${Constants.FILES_DIR}/downloads/fonts").apply { mkdirs() }
-        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { mkdirs() }
+        fontsDownloadsDir = File(appInfo.dataDir, "${Constants.FILES_DIR}/downloads/fonts").apply { asDir() }
+        fontsDir = File(fontsDownloadsDir, fontDef.name!!).apply { asDir() }
         fontsAbsPath = fontsDir.absolutePath + "/"
 
         fontsDir.listFiles()?.forEach { file ->
@@ -96,7 +96,7 @@ class FontsModule: Module() {
                     val url = fontDef.main.getValue(name)
                     try {
                         Log.i("Downloading $name from $url")
-                        val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}")
+                        val file = File(fontsDir, "$name${FILE_EXTENSIONS.first { url.endsWith(it) }}").apply { asFile() }
                         if (file.exists()) return@async
 
                         val client = HttpClient(CIO) {
@@ -132,7 +132,7 @@ class FontsModule: Module() {
                 try {
                     for (fileExtension in FILE_EXTENSIONS) {
                         val (customName, refName) = fontFamilyName.split(":")
-                        val file = File(fontsDownloadsDir, "$customName/$refName.$fileExtension")
+                        val file = File(fontsDownloadsDir, "$customName/$refName.$fileExtension").apply { asFile() }
                         val font = Font.Builder(file).build()
                         val family = FontFamily.Builder(font).build()
                         fontFamilies.add(family)
@@ -204,7 +204,7 @@ class FontsModule: Module() {
         try {
             for (fileExtension in FILE_EXTENSIONS) {
                 val (customName, refName) = fontFamilyName.split(":")
-                val file = File(fontsDownloadsDir, "$customName/$refName.$fileExtension")
+                val file = File(fontsDownloadsDir, "$customName/$refName.$fileExtension").apply { asFile() }
                 if (!file.exists()) throw Exception()
                 return Typeface.createFromFile(file.absolutePath)
             }

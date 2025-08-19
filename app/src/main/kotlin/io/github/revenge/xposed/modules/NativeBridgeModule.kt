@@ -15,9 +15,6 @@ typealias BridgeMethodCallback = (args: BridgeMethodArgs) -> Any?
 typealias BridgeMethodArgs = ArrayList<Any>
 
 class NativeBridgeModule : Module() {
-
-    private lateinit var packageParam: XC_LoadPackage.LoadPackageParam
-
     private lateinit var readableMapGetStringMethod: Method
     private lateinit var readableMapToHashMapMethod: Method
     private lateinit var argumentsMakeNativeObject: Method
@@ -55,9 +52,7 @@ class NativeBridgeModule : Module() {
             else -> this
         })
 
-    override fun onInit(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
-        this@NativeBridgeModule.packageParam = packageParam
-
+    override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         val argumentsClass = classLoader.loadClass("com.facebook.react.bridge.Arguments")
         val readableMapClass = classLoader.loadClass("com.facebook.react.bridge.ReadableMap")
         val promiseClass = classLoader.loadClass("com.facebook.react.bridge.Promise")
