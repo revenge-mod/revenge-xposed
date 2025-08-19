@@ -54,8 +54,6 @@ class Main : Module(), IXposedHookLoadPackage {
     val ETAG_FILE = "etag.txt"
     val CONFIG_FILE = "loader.json"
 
-    val LOADER_NAME = "RevengeXposed"
-
     val DEFAULT_BUNDLE_URL = "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
     val TARGET_PACKAGE = "com.discord"
@@ -71,7 +69,7 @@ class Main : Module(), IXposedHookLoadPackage {
 
     private fun getPayloadString(): String = JSON.encodeToString(
         buildJsonObject {
-            put("loaderName", LOADER_NAME)
+            put("loaderName", Constants.LOADER_NAME)
             put("loaderVersion", BuildConfig.VERSION_NAME)
             for (module in modules) module.buildPayload(this)
         }

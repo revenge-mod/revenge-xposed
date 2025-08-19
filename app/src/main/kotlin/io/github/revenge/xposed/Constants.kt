@@ -9,6 +9,8 @@ class Constants {
 
         const val LOG_TAG = "Revenge"
 
+        const val LOADER_NAME = "RevengeXposed"
+
         const val USER_AGENT = "RevengeXposed"
     }
 }
