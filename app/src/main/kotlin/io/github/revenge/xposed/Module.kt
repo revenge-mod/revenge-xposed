@@ -1,6 +1,7 @@
 package io.github.revenge.xposed
 
 import android.app.Activity
+import android.os.Build
 import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
@@ -8,12 +9,35 @@ import java.lang.reflect.Method
 import kotlinx.serialization.json.JsonObjectBuilder
 import java.io.File
 
+data class AppInfo(
+    val name: String,
+    val packageName: String,
+    val version: String,
+    val versionCode: Long,
+)
+
 abstract class Module {
     open fun buildPayload(builder: JsonObjectBuilder) {}
 
     open fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) {}
 
     open fun onCreate(activity: Activity) {}
+
+    protected fun Activity.getAppInfo(): AppInfo {
+        val pInfo = packageManager.getPackageInfo(packageName, 0)
+        val versionCode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
+            pInfo.longVersionCode
+        else
+            @Suppress("DEPRECATION")
+            pInfo.versionCode.toLong()
+
+        return AppInfo(
+            packageManager.getApplicationLabel(applicationInfo).toString(),
+            packageName,
+            pInfo.versionName ?: versionCode.toString(),
+            versionCode,
+        )
+    }
 
     protected fun File.asDir() {
         if (!this.isDirectory()) this.delete()

@@ -16,6 +16,7 @@ import io.github.revenge.xposed.modules.SysColorsModule
 import io.github.revenge.xposed.modules.ThemeModule
 import io.github.revenge.xposed.Utils.Companion.JSON
 import io.github.revenge.xposed.Utils.Log
+import io.github.revenge.xposed.modules.CacheModule
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -54,8 +55,6 @@ class Main : Module(), IXposedHookLoadPackage {
     val ETAG_FILE = "etag.txt"
     val CONFIG_FILE = "loader.json"
 
-    val LOADER_NAME = "RevengeXposed"
-
     val DEFAULT_BUNDLE_URL = "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
     val TARGET_PACKAGE = "com.discord"
@@ -66,12 +65,13 @@ class Main : Module(), IXposedHookLoadPackage {
         SysColorsModule(),
         FontsModule(),
         LogBoxModule(),
-        NativeBridgeModule()
+        NativeBridgeModule(),
+        CacheModule()
     )
 
     private fun getPayloadString(): String = JSON.encodeToString(
         buildJsonObject {
-            put("loaderName", LOADER_NAME)
+            put("loaderName", Constants.LOADER_NAME)
             put("loaderVersion", BuildConfig.VERSION_NAME)
             for (module in modules) module.buildPayload(this)
         }
