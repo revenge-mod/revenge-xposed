@@ -68,7 +68,7 @@ class CacheModule : Module() {
     }
 }
 
-private class CacheVersionMismatchException(val expected: Int, val actual: Int) :
+private class CacheVersionMismatchException(expected: Int, actual: Int) :
     Throwable("Expected cache version: $expected, but got version: $actual")
 
 data class ModulesCache(
@@ -120,7 +120,7 @@ data class ModulesCache(
     }
 
     companion object {
-        val VERSION = 3
+        const val VERSION = 3
 
         fun loadFromFileOrNull(file: File): ModulesCache? {
             if (!file.exists() || file.length() <= 0L) return null
@@ -208,7 +208,7 @@ data class AssetsCache(
     }
 
     companion object {
-        val VERSION = 2
+        const val VERSION = 2
 
         fun loadFromFileOrNull(file: File): AssetsCache? {
             if (!file.exists() || file.length() <= 0L) return null
