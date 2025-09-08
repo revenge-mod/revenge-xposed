@@ -31,8 +31,6 @@ class CacheModule : Module() {
                 "$ASSETS_CACHE_PREFIX.$versionCode"
             ).apply { asFile() }
 
-        ModulesCache.loadFromFileOrNull(modulesCacheFile)?.let { modulesCache = it }
-        AssetsCache.loadFromFileOrNull(assetsCacheFile)?.let { assetsCache = it }
 
         BridgeModule.registerMethod("revenge.caches.modules.read") {
             if (::modulesCache.isInitialized) modulesCache.toMap() else null
