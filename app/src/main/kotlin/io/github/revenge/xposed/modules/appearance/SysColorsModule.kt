@@ -1,4 +1,4 @@
-package io.github.revenge.xposed.modules
+package io.github.revenge.xposed.modules.appearance
 
 import android.R.color
 import android.app.AndroidAppHelper
@@ -6,17 +6,7 @@ import android.content.Context
 import android.os.Build
 import androidx.core.content.ContextCompat
 import io.github.revenge.xposed.Module
-import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.*
-
-@Serializable
-data class SysColors(
-    val neutral1: List<String>,
-    val neutral2: List<String>,
-    val accent1: List<String>,
-    val accent2: List<String>,
-    val accent3: List<String>
-)
 
 class SysColorsModule : Module() {
     private lateinit var context: Context
