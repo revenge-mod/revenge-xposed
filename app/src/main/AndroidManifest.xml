@@ -1,25 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+          xmlns:tools="http://schemas.android.com/tools">
 
     <application
-        android:allowBackup="true"
-        android:label="@string/app_name"
-        android:supportsRtl="true"
-        tools:targetApi="31"
+            android:allowBackup="true"
+            android:label="@string/app_name"
+            android:supportsRtl="true"
+            tools:targetApi="31"
     >
         <meta-data
-            android:name="xposedmodule"
-            android:value="true" />
+                android:name="xposedmodule"
+                android:value="true"/>
         <meta-data
-            android:name="xposeddescription"
-            android:value="An Xposed module to inject Revenge, a mod for Discord's mobile apps." />
+                android:name="xposeddescription"
+                android:value="👊 Discord, your way. Revenge is a client modification for Discord Android."/>
         <meta-data
-            android:name="xposedminversion"
-            android:value="82" />
+                android:name="xposedminversion"
+                android:value="82"/>
         <meta-data
-            android:name="xposedscope"
-            android:value="com.discord"
+                android:name="xposedscope"
+                android:value="com.discord"
         />
     </application>
 </manifest>
