@@ -11,6 +11,7 @@ import io.github.revenge.xposed.modules.*
 import io.github.revenge.xposed.modules.appearance.FontsModule
 import io.github.revenge.xposed.modules.appearance.SysColorsModule
 import io.github.revenge.xposed.modules.appearance.ThemeModule
+import io.github.revenge.xposed.modules.bridge.AdditionalBridgeMethodsModule
 import io.github.revenge.xposed.modules.bridge.BridgeModule
 
 class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
@@ -18,12 +19,13 @@ class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
     private val modules = mutableListOf(
         HookScriptLoaderModule(),
         BridgeModule(),
+        AdditionalBridgeMethodsModule(),
         UpdaterModule(),
         FixResourcesModule(),
         LogBoxModule(),
         FontsModule(),
         ThemeModule(),
-        SysColorsModule(),
+        SysColorsModule()
     )
 
     init {
