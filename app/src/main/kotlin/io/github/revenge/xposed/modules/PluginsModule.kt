@@ -1,24 +1,36 @@
 package io.github.revenge.xposed.modules
 
-import android.app.Activity
+import android.content.Context
 import android.util.AtomicFile
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
 import io.github.revenge.xposed.modules.bridge.BridgeModule
 import java.io.*
 
+/**
+ * Manages the states of plugins, allowing reading and writing of plugin states to a file.
+ *
+ * ## Methods
+ *
+ * - `revenge.plugins.states.read(): { flags: { [pluginId: string]: number } }`
+ * - Reads the current plugin states from the file and returns them as a map.
+ *
+ * - `revenge.plugins.states.write(flags: { [pluginId: string]: number }): void`
+ * - Writes the provided plugin states to the file.
+ */
 class PluginsModule : Module() {
-    private val DATA_DIR = "revenge/plugins"
-    private val STATES_FILE = "states"
+    private companion object {
+        const val DATA_DIR = "revenge/plugins"
+        const val STATES_FILE = "states"
+    }
 
     private lateinit var states: PluginStates
 
-    override fun onActivity(activity: Activity) = with(activity) {
+    override fun onContext(context: Context) = with(context) {
         val dataDir = File(filesDir, DATA_DIR)
 
         val statesFile = File(
-            dataDir,
-            STATES_FILE
+            dataDir, STATES_FILE
         ).apply { asFile() }
 
         BridgeModule.registerMethod("revenge.plugins.states.read") {
@@ -32,15 +44,11 @@ class PluginsModule : Module() {
         BridgeModule.registerMethod("revenge.plugins.states.write") {
             val (flags) = it
             @Suppress("UNCHECKED_CAST")
-            states =
-                PluginStates(
-                    flags as Map<String, Double>
-                )
-                    .apply { saveToFile(statesFile) }
+            states = PluginStates(
+                flags as Map<String, Double>
+            ).apply { saveToFile(statesFile) }
             Log.i("Plugin states saved: ${statesFile.absolutePath}")
         }
-
-        return@with
     }
 }
 
