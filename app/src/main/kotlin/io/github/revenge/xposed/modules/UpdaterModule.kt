@@ -47,9 +47,7 @@ class UpdaterModule : Module() {
     private lateinit var etag: File
 
     companion object {
-        @Volatile
         var job: Job? = null
-            private set
 
         private const val TIMEOUT_CACHED = 5000L
         private const val TIMEOUT = 10000L
