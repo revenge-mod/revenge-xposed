@@ -23,8 +23,7 @@ class PayloadGlobalModule(private val modules: List<Module>) : Module() {
         buildJsonObject {
             put("loaderName", Constants.LOADER_NAME)
             put("loaderVersion", BuildConfig.VERSION_NAME)
-            @Suppress("DEPRECATION")
-            for (module in modules) module.buildPayload(this)
+            @Suppress("DEPRECATION") for (module in modules) module.buildPayload(this)
         })
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
@@ -57,16 +56,24 @@ class PayloadGlobalModule(private val modules: List<Module>) : Module() {
             }
         }
 
-        val hook = { instance: Class<*> ->
-            instance.hookMethod(
-                "loadScriptFromAssets", AssetManager::class.java, String::class.java, Boolean::class.javaPrimitiveType
-            ) {
-                before {
-                    setGlobalVariable(param, GLOBAL_NAME, getPayloadString())
-                }
+        val hook = MethodHookBuilder().run {
+            before {
+                setGlobalVariable(param, GLOBAL_NAME, getPayloadString())
             }
+
+            build()
         }
 
-        listOf(catalystInstance, reactInstance).forEach { if (it != null) hook(it) }
+        listOf(catalystInstance, reactInstance).forEach { if (it != null) hook(it, hook) }
+    }
+
+    private fun hook(instance: Class<*>, hook: XC_MethodHook) {
+        instance.method(
+            "loadScriptFromAssets", AssetManager::class.java, String::class.java, Boolean::class.javaPrimitiveType,
+        ).hook(hook)
+
+        instance.method(
+            "loadScriptFromFile", String::class.java, String::class.java, Boolean::class.javaPrimitiveType
+        ).hook(hook)
     }
 }
