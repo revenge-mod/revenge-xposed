@@ -34,7 +34,7 @@ data class Theme(
     val id: String, val selected: Boolean, val data: ThemeData
 )
 
-class ThemeModule : Module() {
+class ThemesModule : Module() {
     private lateinit var param: XC_LoadPackage.LoadPackageParam
 
     private var theme: Theme? = null
