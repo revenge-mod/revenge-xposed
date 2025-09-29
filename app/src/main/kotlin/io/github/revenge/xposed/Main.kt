@@ -21,7 +21,7 @@ class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
         BridgeModule(),
         AdditionalBridgeMethodsModule(),
         PluginsModule(),
-        UpdaterModule(),
+        UpdaterModule,
         FixResourcesModule(),
         LogBoxModule(),
         CacheModule(),

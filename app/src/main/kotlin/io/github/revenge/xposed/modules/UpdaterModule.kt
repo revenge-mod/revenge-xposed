@@ -37,26 +37,25 @@ data class LoaderConfig(
  *
  * Shows dialogs when failed allowing retry.
  */
-class UpdaterModule : Module() {
+object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var error: Throwable? = null
+    private var lastActivity: Activity? = null
 
     private lateinit var cacheDir: File
     private lateinit var bundle: File
     private lateinit var etag: File
 
-    companion object {
-        var job: Job? = null
+    var job: Job? = null
 
-        private const val TIMEOUT_CACHED = 5000L
-        private const val TIMEOUT = 10000L
-        private const val ETAG_FILE = "etag.txt"
-        private const val CONFIG_FILE = "loader.json"
+    private const val TIMEOUT_CACHED = 5000L
+    private const val TIMEOUT = 10000L
+    private const val ETAG_FILE = "etag.txt"
+    private const val CONFIG_FILE = "loader.json"
 
-        private const val DEFAULT_BUNDLE_URL =
-            "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
-    }
+    private const val DEFAULT_BUNDLE_URL =
+        "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         cacheDir = File(appInfo.dataDir, Constants.CACHE_DIR).apply { mkdirs() }
@@ -72,11 +71,9 @@ class UpdaterModule : Module() {
                 JSON.decodeFromString<LoaderConfig>(configFile.readText())
             } else LoaderConfig()
         }.getOrDefault(LoaderConfig())
-
-        downloadScript()
     }
 
-    private fun downloadScript(activity: Activity? = null) {
+    fun downloadScript(activity: Activity? = null) {
         job = scope.launch {
             try {
                 HttpClient(CIO) {
@@ -95,7 +92,7 @@ class UpdaterModule : Module() {
                         }
 
                         // Retries don't need timeout
-                        if (activity != null) {
+                        if (activity == null) {
                             timeout {
                                 requestTimeoutMillis = if (!bundle.exists()) TIMEOUT else TIMEOUT_CACHED
                             }
@@ -137,27 +134,36 @@ class UpdaterModule : Module() {
             } catch (e: Throwable) {
                 Log.e("Failed to download script", e)
                 error = e
+                showErrorDialog()
             }
         }
     }
 
     override fun onActivity(activity: Activity) {
-        error ?: return
+        lastActivity = activity
+    }
 
-        AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
-            """
+    fun showErrorDialog() {
+        val activity = lastActivity ?: return
+        val currentError = error ?: return
+
+        error = null
+
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
+                """
                 Unable to download the latest version of Revenge.
                 This is usually caused by bad network connection.
-                
-                Error: ${error?.message ?: error.toString()}
+            
+                Error: ${currentError.message ?: currentError.toString()}
                 """.trimIndent()
-        ).setNegativeButton("Dismiss") { dialog, _ ->
-            dialog.dismiss()
-        }.setPositiveButton("Retry Update") { dialog, _ ->
-            error = null
-            downloadScript(activity)
-            Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
-            dialog.dismiss()
-        }.show()
+            ).setNegativeButton("Dismiss") { dialog, _ ->
+                dialog.dismiss()
+            }.setPositiveButton("Retry Update") { dialog, _ ->
+                downloadScript(activity)
+                Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }.show()
+        }
     }
 }

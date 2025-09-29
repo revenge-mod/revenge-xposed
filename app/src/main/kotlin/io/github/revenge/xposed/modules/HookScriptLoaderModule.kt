@@ -84,6 +84,8 @@ class HookScriptLoaderModule : Module() {
     private fun HookScope.runCustomScripts(loadScriptFromFile: Method, loadScriptFromAssets: Method) {
         Log.i("Running custom scripts...")
 
+        UpdaterModule.downloadScript()
+
         // TODO: Is there a better way to do this?
         runBlocking { UpdaterModule.job?.join() }
 
