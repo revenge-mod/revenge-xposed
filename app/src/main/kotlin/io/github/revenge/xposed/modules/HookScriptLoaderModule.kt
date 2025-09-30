@@ -84,7 +84,7 @@ class HookScriptLoaderModule : Module() {
     private fun HookScope.runCustomScripts(loadScriptFromFile: Method, loadScriptFromAssets: Method) {
         Log.i("Running custom scripts...")
 
-        runBlocking { UpdaterModule.downloadScript() }
+        runBlocking { UpdaterModule.downloadScript().join() }
 
         val loadSynchronously = args[2]
         val runScriptFile = { file: File ->
