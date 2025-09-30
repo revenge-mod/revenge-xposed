@@ -46,8 +46,6 @@ object UpdaterModule : Module() {
     private lateinit var bundle: File
     private lateinit var etag: File
 
-    var job: Job? = null
-
     private const val TIMEOUT_CACHED = 5000L
     private const val TIMEOUT = 10000L
     private const val ETAG_FILE = "etag.txt"
@@ -72,68 +70,66 @@ object UpdaterModule : Module() {
         }.getOrDefault(LoaderConfig())
     }
 
-    fun downloadScript(activity: Activity? = null) {
-        job = scope.launch {
-            try {
-                HttpClient(CIO) {
-                    expectSuccess = false
-                    install(UserAgent) { agent = Constants.USER_AGENT }
-                    install(HttpRedirect) {}
-                }.use { client ->
-                    val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
-                    Log.i("Fetching JS bundle from: $url")
+    fun downloadScript(activity: Activity? = null) = scope.launch {
+        try {
+            HttpClient(CIO) {
+                expectSuccess = false
+                install(UserAgent) { agent = Constants.USER_AGENT }
+                install(HttpRedirect) {}
+            }.use { client ->
+                val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
+                Log.i("Fetching JS bundle from: $url")
 
-                    val response: HttpResponse = client.get(url) {
-                        headers {
-                            if (etag.exists() && bundle.exists()) {
-                                append(HttpHeaders.IfNoneMatch, etag.readText())
-                            }
-                        }
-
-                        // Retries don't need timeout
-                        if (activity == null) {
-                            timeout {
-                                requestTimeoutMillis = if (!bundle.exists()) TIMEOUT else TIMEOUT_CACHED
-                            }
+                val response: HttpResponse = client.get(url) {
+                    headers {
+                        if (etag.exists() && bundle.exists()) {
+                            append(HttpHeaders.IfNoneMatch, etag.readText())
                         }
                     }
 
-                    when (response.status) {
-                        HttpStatusCode.OK -> {
-                            val bytes: ByteArray = response.body()
-                            AtomicFile(bundle).writeBytes(bytes)
-
-                            val newTag = response.headers[HttpHeaders.ETag]
-                            if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
-
-                            Log.i("Bundle updated (${bytes.size} bytes)")
-
-                            // This is a retry, so we show a dialog
-                            if (activity != null) {
-                                withContext(Dispatchers.Main) {
-                                    AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
-                                        .setMessage("A reload is required for changes to take effect.")
-                                        .setPositiveButton("Reload") { dialog, _ ->
-                                            reloadApp()
-                                            dialog.dismiss()
-                                        }.setCancelable(false).show()
-                                }
-                            }
-                        }
-
-                        HttpStatusCode.NotModified -> {
-                            Log.i("Server responded with 304, no changes")
-                        }
-
-                        else -> {
-                            throw ResponseException(response, "Received status: ${response.status}")
+                    // Retries don't need timeout
+                    if (activity == null) {
+                        timeout {
+                            requestTimeoutMillis = if (!bundle.exists()) TIMEOUT else TIMEOUT_CACHED
                         }
                     }
                 }
-            } catch (e: Throwable) {
-                Log.e("Failed to download script", e)
-                showErrorDialog(e)
+
+                when (response.status) {
+                    HttpStatusCode.OK -> {
+                    val bytes: ByteArray = response.body()
+                    AtomicFile(bundle).writeBytes(bytes)
+
+                    val newTag = response.headers[HttpHeaders.ETag]
+                    if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
+
+                    Log.i("Bundle updated (${bytes.size} bytes)")
+
+                    // This is a retry, so we show a dialog
+                    if (activity != null) {
+                        withContext(Dispatchers.Main) {
+                            AlertDialog.Builder(lastActivity).setTitle("Revenge Update Successful")
+                                .setMessage("A reload is required for changes to take effect.")
+                                .setPositiveButton("Reload") { dialog, _ ->
+                                    reloadApp()
+                                    dialog.dismiss()
+                                }.setCancelable(false).show()
+                            }
+                        }
+                    }
+
+                    HttpStatusCode.NotModified -> {
+                        Log.i("Server responded with 304, no changes")
+                    }
+
+                    else -> {
+                        throw ResponseException(response, "Received status: ${response.status}")
+                    }
+                }
             }
+        } catch (e: Throwable) {
+            Log.e("Failed to download script", e)
+            showErrorDialog(e)
         }
     }
 
