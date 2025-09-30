@@ -40,7 +40,6 @@ data class LoaderConfig(
 object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var error: Throwable? = null
     private var lastActivity: Activity? = null
 
     private lateinit var cacheDir: File
@@ -133,8 +132,7 @@ object UpdaterModule : Module() {
                 }
             } catch (e: Throwable) {
                 Log.e("Failed to download script", e)
-                error = e
-                showErrorDialog()
+                showErrorDialog(e)
             }
         }
     }
@@ -143,19 +141,14 @@ object UpdaterModule : Module() {
         lastActivity = activity
     }
 
-    fun showErrorDialog() {
-        val activity = lastActivity ?: return
-        val currentError = error ?: return
-
-        error = null
-
-        activity.runOnUiThread {
+    fun showErrorDialog(e: Throwable) {
+        lastActivity?.runOnUiThread {
             AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
                 """
                 Unable to download the latest version of Revenge.
                 This is usually caused by bad network connection.
             
-                Error: ${currentError.message ?: currentError.toString()}
+                Error: ${e.message ?: e.toString()}
                 """.trimIndent()
             ).setNegativeButton("Dismiss") { dialog, _ ->
                 dialog.dismiss()
