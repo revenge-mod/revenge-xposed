@@ -70,7 +70,7 @@ object UpdaterModule : Module() {
         }.getOrDefault(LoaderConfig())
     }
 
-    fun downloadScript(activity: Activity? = null) = scope.launch {
+    fun downloadScript(activity: Activity? = null): Job = scope.launch {
         try {
             HttpClient(CIO) {
                 expectSuccess = false
