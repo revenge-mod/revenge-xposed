@@ -37,26 +37,22 @@ data class LoaderConfig(
  *
  * Shows dialogs when failed allowing retry.
  */
-class UpdaterModule : Module() {
+object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var error: Throwable? = null
+    private var lastActivity: Activity? = null
 
     private lateinit var cacheDir: File
     private lateinit var bundle: File
     private lateinit var etag: File
 
-    companion object {
-        var job: Job? = null
+    private const val TIMEOUT_CACHED = 5000L
+    private const val TIMEOUT = 10000L
+    private const val ETAG_FILE = "etag.txt"
+    private const val CONFIG_FILE = "loader.json"
 
-        private const val TIMEOUT_CACHED = 5000L
-        private const val TIMEOUT = 10000L
-        private const val ETAG_FILE = "etag.txt"
-        private const val CONFIG_FILE = "loader.json"
-
-        private const val DEFAULT_BUNDLE_URL =
-            "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
-    }
+    private const val DEFAULT_BUNDLE_URL =
+        "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         cacheDir = File(appInfo.dataDir, Constants.CACHE_DIR).apply { mkdirs() }
@@ -72,92 +68,91 @@ class UpdaterModule : Module() {
                 JSON.decodeFromString<LoaderConfig>(configFile.readText())
             } else LoaderConfig()
         }.getOrDefault(LoaderConfig())
-
-        downloadScript()
     }
 
-    private fun downloadScript(activity: Activity? = null) {
-        job = scope.launch {
-            try {
-                HttpClient(CIO) {
-                    expectSuccess = false
-                    install(UserAgent) { agent = Constants.USER_AGENT }
-                    install(HttpRedirect) {}
-                }.use { client ->
-                    val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
-                    Log.i("Fetching JS bundle from: $url")
+    fun downloadScript(activity: Activity? = null): Job = scope.launch {
+        try {
+            HttpClient(CIO) {
+                expectSuccess = false
+                install(UserAgent) { agent = Constants.USER_AGENT }
+                install(HttpRedirect) {}
+            }.use { client ->
+                val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
+                Log.i("Fetching JS bundle from: $url")
 
-                    val response: HttpResponse = client.get(url) {
-                        headers {
-                            if (etag.exists() && bundle.exists()) {
-                                append(HttpHeaders.IfNoneMatch, etag.readText())
-                            }
-                        }
-
-                        // Retries don't need timeout
-                        if (activity != null) {
-                            timeout {
-                                requestTimeoutMillis = if (!bundle.exists()) TIMEOUT else TIMEOUT_CACHED
-                            }
+                val response: HttpResponse = client.get(url) {
+                    headers {
+                        if (etag.exists() && bundle.exists()) {
+                            append(HttpHeaders.IfNoneMatch, etag.readText())
                         }
                     }
 
-                    when (response.status) {
-                        HttpStatusCode.OK -> {
-                            val bytes: ByteArray = response.body()
-                            AtomicFile(bundle).writeBytes(bytes)
-
-                            val newTag = response.headers[HttpHeaders.ETag]
-                            if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
-
-                            Log.i("Bundle updated (${bytes.size} bytes)")
-
-                            // This is a retry, so we show a dialog
-                            if (activity != null) {
-                                withContext(Dispatchers.Main) {
-                                    AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
-                                        .setMessage("A reload is required for changes to take effect.")
-                                        .setPositiveButton("Reload") { dialog, _ ->
-                                            reloadApp()
-                                            dialog.dismiss()
-                                        }.setCancelable(false).show()
-                                }
-                            }
-                        }
-
-                        HttpStatusCode.NotModified -> {
-                            Log.i("Server responded with 304, no changes")
-                        }
-
-                        else -> {
-                            throw ResponseException(response, "Received status: ${response.status}")
+                    // Retries don't need timeout
+                    if (activity == null) {
+                        timeout {
+                            requestTimeoutMillis = if (!bundle.exists()) TIMEOUT else TIMEOUT_CACHED
                         }
                     }
                 }
-            } catch (e: Throwable) {
-                Log.e("Failed to download script", e)
-                error = e
+
+                when (response.status) {
+                    HttpStatusCode.OK -> {
+                    val bytes: ByteArray = response.body()
+                    AtomicFile(bundle).writeBytes(bytes)
+
+                    val newTag = response.headers[HttpHeaders.ETag]
+                    if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
+
+                    Log.i("Bundle updated (${bytes.size} bytes)")
+
+                    // This is a retry, so we show a dialog
+                    if (activity != null) {
+                        withContext(Dispatchers.Main) {
+                            AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
+                                .setMessage("A reload is required for changes to take effect.")
+                                .setPositiveButton("Reload") { dialog, _ ->
+                                    reloadApp()
+                                    dialog.dismiss()
+                                }.setCancelable(false).show()
+                            }
+                        }
+                    }
+
+                    HttpStatusCode.NotModified -> {
+                        Log.i("Server responded with 304, no changes")
+                    }
+
+                    else -> {
+                        throw ResponseException(response, "Received status: ${response.status}")
+                    }
+                }
             }
+        } catch (e: Throwable) {
+            Log.e("Failed to download script", e)
+            showErrorDialog(e)
         }
     }
 
     override fun onActivity(activity: Activity) {
-        error ?: return
+        lastActivity = activity
+    }
 
-        AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
-            """
+    fun showErrorDialog(e: Throwable) {
+        lastActivity?.runOnUiThread {
+            AlertDialog.Builder(lastActivity).setTitle("Revenge Update Failed").setMessage(
+                """
                 Unable to download the latest version of Revenge.
                 This is usually caused by bad network connection.
-                
-                Error: ${error?.message ?: error.toString()}
+            
+                Error: ${e.message ?: e.toString()}
                 """.trimIndent()
-        ).setNegativeButton("Dismiss") { dialog, _ ->
-            dialog.dismiss()
-        }.setPositiveButton("Retry Update") { dialog, _ ->
-            error = null
-            downloadScript(activity)
-            Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
-            dialog.dismiss()
-        }.show()
+            ).setNegativeButton("Dismiss") { dialog, _ ->
+                dialog.dismiss()
+            }.setPositiveButton("Retry Update") { dialog, _ ->
+                downloadScript(lastActivity)
+                Toast.makeText(lastActivity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
+                dialog.dismiss()
+            }.show()
+        }
     }
 }
