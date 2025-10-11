@@ -40,7 +40,6 @@ data class LoaderConfig(
 object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var lastActivity: Activity? = null
 
     private lateinit var cacheDir: File
     private lateinit var bundle: File
@@ -97,23 +96,23 @@ object UpdaterModule : Module() {
 
                 when (response.status) {
                     HttpStatusCode.OK -> {
-                    val bytes: ByteArray = response.body()
-                    AtomicFile(bundle).writeBytes(bytes)
+                        val bytes: ByteArray = response.body()
+                        AtomicFile(bundle).writeBytes(bytes)
 
-                    val newTag = response.headers[HttpHeaders.ETag]
-                    if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
+                        val newTag = response.headers[HttpHeaders.ETag]
+                        if (!newTag.isNullOrEmpty()) etag.writeText(newTag) else etag.delete()
 
-                    Log.i("Bundle updated (${bytes.size} bytes)")
+                        Log.i("Bundle updated (${bytes.size} bytes)")
 
-                    // This is a retry, so we show a dialog
-                    if (activity != null) {
-                        withContext(Dispatchers.Main) {
-                            AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
-                                .setMessage("A reload is required for changes to take effect.")
-                                .setPositiveButton("Reload") { dialog, _ ->
-                                    reloadApp()
-                                    dialog.dismiss()
-                                }.setCancelable(false).show()
+                        // This is a retry, so we show a dialog
+                        if (activity != null) {
+                            withContext(Dispatchers.Main) {
+                                AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
+                                    .setMessage("A reload is required for changes to take effect.")
+                                    .setPositiveButton("Reload") { dialog, _ ->
+                                        reloadApp()
+                                        dialog.dismiss()
+                                    }.setCancelable(false).show()
                             }
                         }
                     }
@@ -129,17 +128,13 @@ object UpdaterModule : Module() {
             }
         } catch (e: Throwable) {
             Log.e("Failed to download script", e)
-            showErrorDialog(e)
+            if (activity != null) showErrorDialog(e, activity)
         }
     }
 
-    override fun onActivity(activity: Activity) {
-        lastActivity = activity
-    }
-
-    fun showErrorDialog(e: Throwable) {
-        lastActivity?.runOnUiThread {
-            AlertDialog.Builder(lastActivity).setTitle("Revenge Update Failed").setMessage(
+    fun showErrorDialog(e: Throwable, activity: Activity) {
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
                 """
                 Unable to download the latest version of Revenge.
                 This is usually caused by bad network connection.
@@ -149,8 +144,8 @@ object UpdaterModule : Module() {
             ).setNegativeButton("Dismiss") { dialog, _ ->
                 dialog.dismiss()
             }.setPositiveButton("Retry Update") { dialog, _ ->
-                downloadScript(lastActivity)
-                Toast.makeText(lastActivity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
+                downloadScript(activity)
+                Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }.show()
         }
