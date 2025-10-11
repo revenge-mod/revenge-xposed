@@ -21,6 +21,7 @@ import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.lang.ref.WeakReference
 
 @Serializable
 data class CustomLoadUrl(
@@ -40,6 +41,7 @@ data class LoaderConfig(
 object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private var lastActivity: WeakReference<Activity>? = null
 
     private lateinit var cacheDir: File
     private lateinit var bundle: File
@@ -128,11 +130,17 @@ object UpdaterModule : Module() {
             }
         } catch (e: Throwable) {
             Log.e("Failed to download script", e)
-            if (activity != null) showErrorDialog(e, activity)
+            showErrorDialog(e)
         }
     }
 
-    fun showErrorDialog(e: Throwable, activity: Activity) {
+    override fun onActivity(activity: Activity) {
+        lastActivity = WeakReference(activity)
+    }
+
+    fun showErrorDialog(e: Throwable) {
+        val activity = lastActivity?.get() ?: return
+
         activity.runOnUiThread {
             AlertDialog.Builder(activity).setTitle("Revenge Update Failed").setMessage(
                 """
