@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.widget.Toast
 import io.github.revenge.xposed.Module
+import java.io.File
 
 class AdditionalBridgeMethodsModule : Module() {
     override fun onContext(context: Context) = with(context) {
@@ -41,5 +42,45 @@ class AdditionalBridgeMethodsModule : Module() {
 
             null
         }
+
+        BridgeModule.registerMethod("revenge.fs.getConstants") {
+            mapOf(
+                "data" to dataDir.absolutePath,
+                "files" to filesDir.absolutePath,
+                "cache" to cacheDir.absolutePath,
+            )
+        }
+
+        BridgeModule.registerMethod("revenge.fs.delete") {
+            val (path) = it
+            File(path as String).run {
+                if (this.isDirectory) this.deleteRecursively()
+                else this.delete()
+            }
+        }
+
+        BridgeModule.registerMethod("revenge.fs.exists") {
+            val (path) = it
+            File(path as String).exists()
+        }
+
+        BridgeModule.registerMethod("revenge.fs.read") { it ->
+            val (path) = it
+            val file = File(path as String).apply { openFileGuarded() }
+
+            file.bufferedReader().use { it.readText() }
+        }
+
+        BridgeModule.registerMethod("revenge.fs.write") {
+            val (path, contents) = it
+            val file = File(path as String).apply { openFileGuarded() }
+
+            file.writeText(contents as String)
+        }
+    }
+
+    private fun File.openFileGuarded() {
+        if (!this.exists()) throw Error("Path does not exist: $path")
+        if (!this.isFile) throw Error("Path is not a file: $path")
     }
 }

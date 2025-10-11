@@ -5,7 +5,6 @@ import io.github.revenge.xposed.BuildConfig
 import io.github.revenge.xposed.Constants
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
-import java.io.File
 import java.lang.reflect.Method
 
 /**
@@ -56,11 +55,6 @@ class BridgeModule : Module() {
         private const val METHOD_NAME_KEY = "method"
         private const val METHOD_ARGS_KEY = "args"
 
-        private fun File.openFileGuarded() {
-            if (!this.exists()) throw Error("Path does not exist: $path")
-            if (!this.isFile) throw Error("Path is not a file: $path")
-        }
-
         private val methods: MutableMap<String, BridgeMethodCallback> = mutableMapOf("revenge.info" to {
             mapOf(
                 "name" to Constants.LOADER_NAME, "version" to BuildConfig.VERSION_CODE
@@ -74,25 +68,6 @@ class BridgeModule : Module() {
                 "boolean" to false,
                 "args" to it,
             )
-        }, "revenge.fs.delete" to {
-            val (path) = it
-            File(path as String).run {
-                if (this.isDirectory) this.deleteRecursively()
-                else this.delete()
-            }
-        }, "revenge.fs.exists" to {
-            val (path) = it
-            File(path as String).exists()
-        }, "revenge.fs.read" to { it ->
-            val (path) = it
-            val file = File(path as String).apply { openFileGuarded() }
-
-            file.bufferedReader().use { it.readText() }
-        }, "revenge.fs.write" to { it ->
-            val (path, contents) = it
-            val file = File(path as String).apply { openFileGuarded() }
-
-            file.writeText(contents as String)
         })
 
         /**
