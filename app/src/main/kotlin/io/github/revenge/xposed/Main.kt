@@ -7,12 +7,18 @@ import android.os.Bundle
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.xposed.Utils.Log
 import io.github.revenge.xposed.modules.*
 import io.github.revenge.xposed.modules.appearance.FontsModule
 import io.github.revenge.xposed.modules.appearance.SysColorsModule
 import io.github.revenge.xposed.modules.appearance.ThemesModule
 import io.github.revenge.xposed.modules.bridge.AdditionalBridgeMethodsModule
 import io.github.revenge.xposed.modules.bridge.BridgeModule
+import kotlinx.coroutines.CompletableDeferred
+
+object HookReadyHolder {
+    val deferred = CompletableDeferred<Unit>()
+}
 
 class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
     private var hooked = false
@@ -45,13 +51,16 @@ class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         ContextWrapper::class.java.hookMethod("attachBaseContext", Context::class.java) {
             after {
+                Log.i("Received Context")
                 this@Main.onContext(args[0] as Context)
             }
         }
 
         reactActivity.hookMethod("onCreate", Bundle::class.java) {
             after {
+                Log.i("Received Activity")
                 this@Main.onActivity(thisObject as Activity)
+                HookReadyHolder.deferred.complete(Unit)
             }
         }
 
