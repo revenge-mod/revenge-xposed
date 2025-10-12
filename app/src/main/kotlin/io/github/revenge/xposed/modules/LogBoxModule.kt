@@ -62,22 +62,31 @@ class LogBoxModule : Module() {
         }
     }
 
-    private fun showRecoveryAlert(context: Context) {
-        AlertDialog.Builder(context).setTitle("Revenge Recovery Options")
-            .setItems(arrayOf("Reload", "Delete bundle.js")) { _, which ->
-                when (which) {
-                    0 -> {
-                        reloadApp()
-                    }
+    companion object {
+        fun showRecoveryAlert(context: Context) {
+            AlertDialog.Builder(context).setTitle("Revenge Recovery Options")
+                .setItems(arrayOf("Reload", "Delete Script", "Reset Loader Config")) { _, which ->
+                    when (which) {
+                        0 -> {
+                            reloadApp()
+                        }
 
-                    1 -> {
-                        val bundleFile =
-                            File(packageParam.appInfo.dataDir, "${Constants.CACHE_DIR}/${Constants.MAIN_SCRIPT_FILE}")
-                        if (bundleFile.exists()) bundleFile.delete()
+                        1 -> {
+                            val bundleFile = File(
+                                context.dataDir, "${Constants.CACHE_DIR}/${Constants.MAIN_SCRIPT_FILE}"
+                            )
 
-                        reloadApp()
+                            if (bundleFile.exists()) bundleFile.delete()
+
+                            reloadApp()
+                        }
+
+                        2 -> {
+                            UpdaterModule.resetLoaderConfig(context)
+                            reloadApp()
+                        }
                     }
-                }
-            }.show()
+                }.show()
+        }
     }
 }

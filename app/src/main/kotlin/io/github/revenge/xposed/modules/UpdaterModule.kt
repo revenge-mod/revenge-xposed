@@ -2,6 +2,7 @@ package io.github.revenge.xposed.modules
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Context
 import android.util.AtomicFile
 import android.widget.Toast
 import androidx.core.util.writeBytes
@@ -155,7 +156,16 @@ object UpdaterModule : Module() {
                 downloadScript(activity)
                 Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
+            }.setNeutralButton("Recovery") { dialog, _ ->
+                LogBoxModule.showRecoveryAlert(activity)
+                dialog.dismiss()
             }.show()
         }
+    }
+
+    fun resetLoaderConfig(context: Context) {
+        val filesDir = File(context.dataDir, Constants.FILES_DIR)
+        val config = File(filesDir, CONFIG_FILE)
+        if (config.exists()) config.delete()
     }
 }
