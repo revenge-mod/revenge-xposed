@@ -11,16 +11,12 @@ import java.io.File
 
 class LogBoxModule : Module() {
     lateinit var packageParam: XC_LoadPackage.LoadPackageParam
-    lateinit var bridgeDevSupportManagerClass: Class<*>
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         this@LogBoxModule.packageParam = packageParam
 
         val dcdReactNativeHostClass = classLoader.loadClass("com.discord.bridge.DCDReactNativeHost")
-        bridgeDevSupportManagerClass = classLoader.loadClass("com.facebook.react.devsupport.BridgeDevSupportManager")
-
         val getUseDeveloperSupportMethod = dcdReactNativeHostClass.methods.first { it.name == "getUseDeveloperSupport" }
-        val handleReloadJSMethod = bridgeDevSupportManagerClass.methods.first { it.name == "handleReloadJS" }
 
         // This enables the LogBox and opens dev option on shake
         getUseDeveloperSupportMethod.hook {
@@ -29,6 +25,20 @@ class LogBoxModule : Module() {
             }
         }
 
+        return@with
+    }
+
+    override fun onContext(context: Context) {
+        listOf(
+            "com.facebook.react.devsupport.BridgeDevSupportManager",
+            "com.facebook.react.devsupport.BridgelessDevSupportManager"
+        ).mapNotNull { packageParam.classLoader.safeLoadClass(it) }.forEach { hookDevSupportManager(it, context) }
+    }
+
+    private fun hookDevSupportManager(clazz: Class<*>, context: Context) {
+        val handleReloadJSMethod = clazz.methods.first { it.name == "handleReloadJS" }
+        val showDevOptionsDialogMethod = clazz.methods.first { it.name == "showDevOptionsDialog" }
+
         // Replace the method to direct relaunch the app instead of sending reload command to developer server
         handleReloadJSMethod.hook {
             before {
@@ -36,13 +46,6 @@ class LogBoxModule : Module() {
                 result = null
             }
         }
-
-        return@with
-    }
-
-    override fun onContext(context: Context) {
-        val showDevOptionsDialogMethod =
-            bridgeDevSupportManagerClass.methods.first { it.name == "showDevOptionsDialog" }
 
         // Triggered on shake
         showDevOptionsDialogMethod.hook {
