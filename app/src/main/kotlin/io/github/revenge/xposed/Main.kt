@@ -16,8 +16,19 @@ import io.github.revenge.xposed.modules.bridge.AdditionalBridgeMethodsModule
 import io.github.revenge.xposed.modules.bridge.BridgeModule
 import kotlinx.coroutines.CompletableDeferred
 
-object HookReadyHolder {
-    val deferred = CompletableDeferred<Unit>()
+object HookStateHolder {
+    /**
+     * Whether all hooks are completed, and we are ready to load the JS bundle.
+     */
+    val readyDeferred = CompletableDeferred<Unit>()
+
+    /**
+     * Whether we have successfully received a [Context] yet.
+     * Sometimes the app process is recreated and Xposed hooks way too late for us to get [Context] from [ContextWrapper.attachBaseContext].
+     * But since Xposed hooks before [Activity.onCreate], we can still get it from there and still initialize properly.
+     */
+    @Volatile
+    var gotContext = false
 }
 
 class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
@@ -51,16 +62,25 @@ class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         ContextWrapper::class.java.hookMethod("attachBaseContext", Context::class.java) {
             after {
+                val ctx = args[0] as Context
+                HookStateHolder.gotContext = true
                 Log.i("Received Context")
-                this@Main.onContext(args[0] as Context)
+                this@Main.onContext(ctx)
             }
         }
 
         reactActivity.hookMethod("onCreate", Bundle::class.java) {
             after {
+                val act = thisObject as Activity
                 Log.i("Received Activity")
-                this@Main.onActivity(thisObject as Activity)
-                HookReadyHolder.deferred.complete(Unit)
+
+                if (!HookStateHolder.gotContext) {
+                    Log.w("Activity created before we got Context, process may have been recreated!")
+                    this@Main.onContext(act.applicationContext)
+                }
+
+                this@Main.onActivity(act)
+                HookStateHolder.readyDeferred.complete(Unit)
             }
         }
 

@@ -6,7 +6,7 @@ import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.revenge.xposed.Constants
-import io.github.revenge.xposed.HookReadyHolder
+import io.github.revenge.xposed.HookStateHolder
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
 import io.github.revenge.xposed.modules.HookScriptLoaderModule.Companion.PRELOADS_DIR
@@ -88,7 +88,7 @@ class HookScriptLoaderModule : Module() {
         Log.i("Running custom scripts...")
 
         runBlocking {
-            val ready = async { HookReadyHolder.deferred.join() }
+            val ready = async { HookStateHolder.readyDeferred.join() }
             val download = async { UpdaterModule.downloadScript().join() }
 
             awaitAll(ready, download)
