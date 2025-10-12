@@ -12,8 +12,8 @@ android {
         applicationId = "io.github.revenge.xposed"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1404
-        versionName = "1.4.4"
+        versionCode = 1405
+        versionName = "1.4.5"
     }
 
     buildTypes {
