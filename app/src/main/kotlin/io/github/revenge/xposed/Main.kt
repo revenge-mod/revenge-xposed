@@ -14,6 +14,8 @@ import io.github.revenge.xposed.modules.appearance.SysColorsModule
 import io.github.revenge.xposed.modules.appearance.ThemesModule
 import io.github.revenge.xposed.modules.bridge.AdditionalBridgeMethodsModule
 import io.github.revenge.xposed.modules.bridge.BridgeModule
+import io.github.revenge.xposed.modules.no_track.BlockCrashReportingModule
+import io.github.revenge.xposed.modules.no_track.BlockDeepLinksTrackingModule
 import kotlinx.coroutines.CompletableDeferred
 
 object HookStateHolder {
@@ -40,6 +42,8 @@ class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
         PluginsModule(),
         UpdaterModule,
         FixResourcesModule(),
+        BlockDeepLinksTrackingModule(),
+        BlockCrashReportingModule(),
         LogBoxModule(),
         CacheModule(),
         FontsModule(),
