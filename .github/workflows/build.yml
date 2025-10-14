@@ -1,53 +1,73 @@
 name: Build APK
-on: [push]
+
+on:
+  push:
+    branches: [ '**' ]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: 17
 
 jobs:
-    build:
-        name: Build and push
-        runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-        steps:
-            - uses: actions/checkout@v3
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
-            - uses: actions/setup-java@v3
-              with:
-                  distribution: "temurin"
-                  java-version: "17"
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
 
-            - name: "Setup Gradle"
-              uses: gradle/gradle-build-action@v2
+      - name: Make Gradle executable
+        run: chmod +x ./gradlew
 
-            - name: "Grant execution permission"
-              run: chmod +x ./gradlew
+      - name: Optional Keystore (if provided)
+        if: ${{ secrets.keystore != '' }}
+        run: |
+          echo "${{ secrets.keystore }}" | base64 -d > signing-key.jks
+          ls -l signing-key.jks
 
-            - name: "Build APKs"
-              run: ./gradlew build
+      - name: Assemble Debug and Release
+        run: |
+          if [ -f signing-key.jks ]; then
+            ./gradlew \
+              assembleDebug \
+              assembleRelease \
+              -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
+              -Pandroid.injected.signing.store.password='${{ secrets.keystore_password }}' \
+              -Pandroid.injected.signing.key.alias='${{ secrets.key_alias }}' \
+              -Pandroid.injected.signing.key.password='${{ secrets.key_password }}'
+          else
+            ./gradlew assembleDebug assembleRelease
+          fi
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
 
-            - name: "Setup directories"
-              run: |
-                  mkdir -p /tmp/build/apks
-                  mkdir -p /tmp/build/tools
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/*.apk dist/ || true
+          # Prefer signed release if produced
+            if ls app/build/outputs/apk/release/*-signed.apk >/dev/null 2>&1; then
+              cp app/build/outputs/apk/release/*-signed.apk dist/
+            else
+              cp app/build/outputs/apk/release/*.apk dist/
+            fi
+          ls -1 dist
 
-            - name: "Move debug APK"
-              run: mv ./app/build/outputs/apk/debug/app-debug.apk /tmp/build/apks
-
-            - name: "Download uber-apk-signer"
-              run: wget -nv "https://github.com/patrickfav/uber-apk-signer/releases/download/v1.2.1/uber-apk-signer-1.2.1.jar" -O /tmp/build/tools/uber-apk-signer.jar
-
-            - name: "Sign release APK"
-              run: java -jar /tmp/build/tools/uber-apk-signer.jar --apks ./app/build/outputs/apk/release/app-release-unsigned.apk --out /tmp/build/apks/
-
-            - name: "Rename release APK"
-              run: mv /tmp/build/apks/app-release-aligned-debugSigned.apk /tmp/build/apks/app-release.apk
-
-            - name: "Upload debug APK"
-              uses: actions/upload-artifact@v4
-              with:
-                name: app-debug
-                path: /tmp/build/apks/app-debug.apk
-
-            - name: "Upload release APK"
-              uses: actions/upload-artifact@v4
-              with:
-                name: app-release
-                path: /tmp/build/apks/app-release.apk
+      - name: Upload All APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: apks
+          path: dist/*.apk
+          if-no-files-found: error

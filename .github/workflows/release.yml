@@ -1,77 +1,105 @@
 name: Build Release
+
 on:
-    workflow_dispatch:
-        inputs:
-            versionName:
-                required: true
-                description: This releases version name
-                default: "1.0.0"
-            versionCode:
-                required: true
-                description: This releases version code
-                default: "1000"
+  workflow_dispatch:
+    inputs:
+      versionName:
+        required: true
+        description: This release's version name
+        default: "1.0.0"
+      versionCode:
+        required: true
+        description: This release's version code
+        default: "1000"
 
 permissions:
-    contents: write
+  contents: write
+
+env:
+  JAVA_VERSION: 17
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        steps:
-        -   name: Checkout
-            uses: actions/checkout@master
-    
-        -   name: Setup JDK 17
-            uses: actions/setup-java@v3
-            with:
-                java-version: 17
-                distribution: 'temurin'
-                cache: 'gradle'
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-        -   name: Setup Android SDK
-            uses: android-actions/setup-android@v2.0.10
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: temurin
+          cache: gradle
 
-        -   name: Set Version
-            uses: chkfung/android-version-actions@v1.1
-            with:
-                gradlePath: app/build.gradle.kts
-                versionCode: ${{github.event.inputs.versionCode}}
-                versionName: ${{github.event.inputs.versionName}}
-        
-        -   name: Bump Version
-            continue-on-error: true
-            run: |
-                git config --local user.email "actions@github.com"
-                git config --local user.name "GitHub Actions"
-                git add app/build.gradle.kts
-                if ! git diff --quiet app/build.gradle.kts; then
-                    git commit -m "chore: Bump version to ${{github.event.inputs.versionName}} (${{github.event.inputs.versionCode}})"
-                    git push
-                else
-                    echo "No changes to version file, skipping commit"
-                fi
-            
-        -   name: Build Signed APK
-            run: |
-                echo "${{ secrets.keystore }}" | base64 -d > $GITHUB_WORKSPACE/signing-key.jks
-                chmod +x ./gradlew
-                ./gradlew packageReleaseUniversalApk \
-                    -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-                    -Pandroid.injected.signing.store.password=${{ secrets.keystore_password }} \
-                    -Pandroid.injected.signing.key.alias=${{ secrets.key_alias }} \
-                    -Pandroid.injected.signing.key.password=${{ secrets.key_password }}
-    
-        -   name: Release
-            run: |
-                mv app/build/outputs/apk_from_bundle/release/app-release-universal.apk ./app-release.apk
-                git config --local user.email "actions@github.com"
-                git config --local user.name "GitHub Actions"
-                tag="${{ github.event.inputs.versionCode }}"
-                git tag "$tag"
-                git push origin "$tag"
-                gh release create "$tag" \
-                    --title "${{ github.event.inputs.versionName }}" \
-                    --generate-notes \
-                    ./*.apk
-            env:
-                GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Set Version
+        uses: chkfung/android-version-actions@v1.1
+        with:
+          gradlePath: app/build.gradle.kts
+          versionCode: ${{ github.event.inputs.versionCode }}
+          versionName: ${{ github.event.inputs.versionName }}
+
+      - name: Commit Version Bump (if changed)
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add app/build.gradle.kts
+          if git diff --cached --quiet; then
+            echo "No version change."
+          else
+            git commit -m "chore: bump version to ${{ github.event.inputs.versionName }} (${{ github.event.inputs.versionCode }})"
+            git push
+          fi
+
+      - name: Prepare Keystore
+        run: |
+          echo "${{ secrets.keystore }}" | base64 -d > signing-key.jks
+          ls -l signing-key.jks
+
+      - name: Build Universal APKs
+        run: |
+          chmod +x ./gradlew
+          ./gradlew \
+            packageDebugUniversalApk \
+            packageReleaseUniversalApk \
+            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
+            -Pandroid.injected.signing.store.password='${{ secrets.keystore_password }}' \
+            -Pandroid.injected.signing.key.alias='${{ secrets.key_alias }}' \
+            -Pandroid.injected.signing.key.password='${{ secrets.key_password }}'
+        env:
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+      - name: Collect APKs
+        run: |
+          mkdir dist
+          mv app/build/outputs/apk_from_bundle/debug/app-debug-universal.apk dist/app-debug.apk
+          mv app/build/outputs/apk_from_bundle/release/app-release-universal.apk dist/app-release.apk
+          ls -l dist
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apks
+          path: dist/*.apk
+          if-no-files-found: error
+
+      - name: Create Tag and Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag=${{ github.event.inputs.versionCode }}
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag already exists, skipping creation."
+          else
+            git tag "$tag"
+            git push origin "$tag"
+          fi
+          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" \
+            --title "${{ github.event.inputs.versionName }}" \
+            --generate-notes \
+            dist/app-debug.apk dist/app-release.apk
