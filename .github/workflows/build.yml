@@ -32,26 +32,32 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Optional Keystore (if provided)
-        if: ${{ secrets.keystore != '' }}
+        env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
         run: |
-          echo "${{ secrets.keystore }}" | base64 -d > signing-key.jks
-          ls -l signing-key.jks
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > signing-key.jks
+            ls -l signing-key.jks
+          else
+            echo "No keystore provided, skipping..."
+          fi
 
       - name: Assemble Debug and Release
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          GRADLE_OPTS: -Dorg.gradle.daemon=false
         run: |
           if [ -f signing-key.jks ]; then
-            ./gradlew \
-              assembleDebug \
-              assembleRelease \
+            ./gradlew assembleDebug assembleRelease \
               -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-              -Pandroid.injected.signing.store.password='${{ secrets.keystore_password }}' \
-              -Pandroid.injected.signing.key.alias='${{ secrets.key_alias }}' \
-              -Pandroid.injected.signing.key.password='${{ secrets.key_password }}'
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
           else
             ./gradlew assembleDebug assembleRelease
           fi
-        env:
-          GRADLE_OPTS: -Dorg.gradle.daemon=false
 
       - name: Collect APKs
         run: |
