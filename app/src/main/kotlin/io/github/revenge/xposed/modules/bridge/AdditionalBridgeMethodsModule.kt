@@ -7,6 +7,7 @@ import android.content.Context
 import android.os.Build
 import android.widget.Toast
 import io.github.revenge.xposed.Module
+import io.github.revenge.xposed.Utils
 import java.io.File
 
 class AdditionalBridgeMethodsModule : Module() {
@@ -41,6 +42,10 @@ class AdditionalBridgeMethodsModule : Module() {
                 .show()
 
             null
+        }
+
+        BridgeModule.registerMethod("revenge.showRecoveryAlert") {
+            Utils.showRecoveryAlert(context)
         }
 
         BridgeModule.registerMethod("revenge.fs.getConstants") {
