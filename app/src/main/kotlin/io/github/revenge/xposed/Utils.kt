@@ -1,8 +1,12 @@
 package io.github.revenge.xposed
 
+import android.app.AlertDialog
 import android.app.AndroidAppHelper
+import android.content.Context
 import android.content.Intent
+import io.github.revenge.xposed.modules.UpdaterModule
 import kotlinx.serialization.json.Json
+import java.io.File
 import kotlin.system.exitProcess
 
 class Utils {
@@ -14,6 +18,32 @@ class Utils {
             val intent = application.packageManager.getLaunchIntentForPackage(application.packageName)
             application.startActivity(Intent.makeRestartActivityTask(intent!!.component))
             exitProcess(0)
+        }
+
+        fun showRecoveryAlert(context: Context) {
+            AlertDialog.Builder(context).setTitle("Revenge Recovery Options")
+                .setItems(arrayOf("Reload", "Delete Script", "Reset Loader Config")) { _, which ->
+                    when (which) {
+                        0 -> {
+                            reloadApp()
+                        }
+
+                        1 -> {
+                            val bundleFile = File(
+                                context.dataDir, "${Constants.CACHE_DIR}/${Constants.MAIN_SCRIPT_FILE}"
+                            )
+
+                            if (bundleFile.exists()) bundleFile.delete()
+
+                            reloadApp()
+                        }
+
+                        2 -> {
+                            UpdaterModule.resetLoaderConfig(context)
+                            reloadApp()
+                        }
+                    }
+                }.show()
         }
     }
 

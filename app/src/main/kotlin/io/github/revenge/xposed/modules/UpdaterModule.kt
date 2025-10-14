@@ -9,6 +9,7 @@ import androidx.core.util.writeBytes
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import io.github.revenge.xposed.Constants
 import io.github.revenge.xposed.Module
+import io.github.revenge.xposed.Utils
 import io.github.revenge.xposed.Utils.Companion.JSON
 import io.github.revenge.xposed.Utils.Companion.reloadApp
 import io.github.revenge.xposed.Utils.Log
@@ -157,7 +158,7 @@ object UpdaterModule : Module() {
                 Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
                 dialog.dismiss()
             }.setNeutralButton("Recovery") { dialog, _ ->
-                LogBoxModule.showRecoveryAlert(activity)
+                Utils.showRecoveryAlert(activity)
                 dialog.dismiss()
             }.show()
         }
