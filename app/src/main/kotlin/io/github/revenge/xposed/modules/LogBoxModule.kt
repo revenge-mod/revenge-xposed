@@ -2,7 +2,7 @@ package io.github.revenge.xposed.modules
 
 import android.content.Context
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import io.github.revenge.xposed.Constants
+import io.github.revenge.xposed.BuildConfig
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils
 import io.github.revenge.xposed.Utils.Companion.reloadApp
@@ -12,6 +12,9 @@ class LogBoxModule : Module() {
     lateinit var packageParam: XC_LoadPackage.LoadPackageParam
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
+        // Only enable this module in debug builds
+        if (!BuildConfig.DEBUG) return@with
+
         this@LogBoxModule.packageParam = packageParam
 
         val dcdReactNativeHostClass = classLoader.loadClass("com.discord.bridge.DCDReactNativeHost")
