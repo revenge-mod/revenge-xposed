@@ -149,7 +149,7 @@ object UpdaterModule : Module() {
                 Unable to download the latest version of Revenge.
                 This is usually caused by bad network connection.
             
-                Error: ${e.message ?: e.toString()}
+                Error: ${e.message ?: e.stackTraceToString()}
                 """.trimIndent()
             ).setNegativeButton("Dismiss") { dialog, _ ->
                 dialog.dismiss()

@@ -131,7 +131,7 @@ class BridgeModule : Module() {
         val ret = method(args).toNativeObject()
         mapOf("result" to ret)
     } catch (e: Throwable) {
-        mapOf("error" to e.toString())
+        mapOf("error" to e.stackTraceToString())
     }
 
     private fun getBridgeCallData(hashMap: HashMap<String, Any?>): Pair<BridgeMethodCallback, BridgeMethodArgs>? {
