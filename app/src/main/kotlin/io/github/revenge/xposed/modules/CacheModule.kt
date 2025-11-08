@@ -33,13 +33,13 @@ import java.io.*
  *  The caches are versioned and tied to the app version code. When the app is updated,
  *  the caches are invalidated and new cache files are created.
  */
-class CacheModule : Module() {
-    private companion object {
-        const val CACHE_DIR = "revenge"
+object CacheModule : Module() {
 
-        const val MODULES_CACHE_PREFIX = "modules"
-        const val ASSETS_CACHE_PREFIX = "assets"
-    }
+    private const val CACHE_DIR = "revenge"
+
+    private const val MODULES_CACHE_PREFIX = "modules"
+    private const val ASSETS_CACHE_PREFIX = "assets"
+
 
     private lateinit var modulesCache: ModulesCache
     private lateinit var assetsCache: AssetsCache

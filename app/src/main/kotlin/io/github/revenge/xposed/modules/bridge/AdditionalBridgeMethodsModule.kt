@@ -11,7 +11,7 @@ import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils
 import java.io.File
 
-class AdditionalBridgeMethodsModule : Module() {
+object AdditionalBridgeMethodsModule : Module() {
     override fun onContext(context: Context) = with(context) {
         BridgeModule.registerMethod("revenge.fs.getConstants") {
             mapOf(

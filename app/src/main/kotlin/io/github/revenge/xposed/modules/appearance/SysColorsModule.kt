@@ -7,13 +7,14 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import io.github.revenge.xposed.Module
 import kotlinx.serialization.json.*
+import java.lang.ref.WeakReference
 
-class SysColorsModule : Module() {
-    private lateinit var context: Context
+object SysColorsModule : Module() {
+    private lateinit var context: WeakReference<Context>
     private fun isSupported() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     override fun buildPayload(builder: JsonObjectBuilder) {
-        context = AndroidAppHelper.currentApplication()
+        context = WeakReference(AndroidAppHelper.currentApplication())
         val accents = arrayOf("accent1", "accent2", "accent3", "neutral1", "neutral2")
         val shades = arrayOf(0, 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000)
 
@@ -36,7 +37,7 @@ class SysColorsModule : Module() {
     }
 
     private fun convertToColor(id: Int): String {
-        val clr = if (isSupported()) ContextCompat.getColor(context, id) else 0
+        val clr = if (isSupported()) ContextCompat.getColor(context.get()!!, id) else 0
         return String.format("#%06X", 0xFFFFFF and clr)
     }
 }

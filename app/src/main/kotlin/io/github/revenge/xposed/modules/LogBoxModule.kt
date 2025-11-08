@@ -8,7 +8,7 @@ import io.github.revenge.xposed.Utils
 import io.github.revenge.xposed.Utils.Companion.reloadApp
 import io.github.revenge.xposed.Utils.Log
 
-class LogBoxModule : Module() {
+object LogBoxModule : Module() {
     lateinit var packageParam: XC_LoadPackage.LoadPackageParam
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {

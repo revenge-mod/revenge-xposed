@@ -45,43 +45,28 @@ typealias BridgeMethodArgs = ArrayList<Any>
  * }
  * ```
  */
-class BridgeModule : Module() {
+object BridgeModule : Module() {
     private lateinit var readableMapGetString: Method
     private lateinit var readableMapToHashMap: Method
     private lateinit var argumentsMakeNative: Method
 
-    companion object {
-        private const val CALL_DATA_KEY = "revenge"
-        private const val METHOD_NAME_KEY = "method"
-        private const val METHOD_ARGS_KEY = "args"
+    private const val CALL_DATA_KEY = "revenge"
+    private const val METHOD_NAME_KEY = "method"
+    private const val METHOD_ARGS_KEY = "args"
 
-        private val methods: MutableMap<String, BridgeMethodCallback> = mutableMapOf("revenge.info" to {
-            mapOf(
-                "name" to Constants.LOADER_NAME, "version" to BuildConfig.VERSION_CODE
-            )
-        }, "revenge.test" to {
-            mapOf(
-                "string" to "string",
-                "number" to 7256,
-                "array" to listOf("testing", 527737, listOf(true)),
-                "object" to mapOf("nested" to true),
-                "boolean" to false,
-                "args" to it,
-            )
-        })
+    private val methods: MutableMap<String, BridgeMethodCallback> = mutableMapOf()
 
-        /**
-         * Registers a bridge method that can be called from JavaScript.
-         *
-         * If the method is already registered, it will be overwritten.
-         *
-         * @param name The name of the method to register.
-         * @param callback The callback to invoke when the method is called.
-         */
-        fun registerMethod(name: String, callback: BridgeMethodCallback) {
-            if (methods.containsKey(name)) Log.w("Bridge method already exists and will be overridden: $name")
-            methods[name] = callback
-        }
+    /**
+     * Registers a bridge method that can be called from JavaScript.
+     *
+     * If the method is already registered, it will be overwritten.
+     *
+     * @param name The name of the method to register.
+     * @param callback The callback to invoke when the method is called.
+     */
+    fun registerMethod(name: String, callback: BridgeMethodCallback) {
+        if (methods.containsKey(name)) Log.w("Bridge method already exists and will be overridden: $name")
+        methods[name] = callback
     }
 
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
@@ -112,7 +97,30 @@ class BridgeModule : Module() {
                 }
             }
 
+        // Clear methods every package load. Plugins should re-register on each load.
+        methods.clear()
+        registerDefaultMethods()
+
         return@with
+    }
+
+    private fun registerDefaultMethods() {
+        methods["revenge.info"] = {
+            mapOf(
+                "name" to Constants.LOADER_NAME, "version" to BuildConfig.VERSION_CODE
+            )
+        }
+
+        methods["revenge.test"] = {
+            mapOf(
+                "string" to "string",
+                "number" to 7256,
+                "array" to listOf("testing", 527737, listOf(true)),
+                "object" to mapOf("nested" to true),
+                "boolean" to false,
+                "args" to it,
+            )
+        }
     }
 
     private fun Any?.toNativeObject(): Any? = argumentsMakeNative.invoke(

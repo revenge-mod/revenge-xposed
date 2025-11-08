@@ -34,15 +34,14 @@ data class Theme(
     val id: String, val selected: Boolean, val data: ThemeData
 )
 
-class ThemesModule : Module() {
+object ThemesModule : Module() {
     private lateinit var param: XC_LoadPackage.LoadPackageParam
 
     private var theme: Theme? = null
     private val rawColorMap = mutableMapOf<String, Int>()
 
-    private companion object {
-        const val THEME_FILE = "current-theme.json"
-    }
+    private const val THEME_FILE = "current-theme.json"
+
 
     @ExperimentalSerializationApi
     override fun buildPayload(builder: JsonObjectBuilder) {
@@ -62,7 +61,7 @@ class ThemesModule : Module() {
         hookTheme()
     }
 
-    private fun File.isValidish(): Boolean {
+    private fun File.isValidThemeFile(): Boolean {
         if (!this.exists()) return false
 
         val text = this.readText()
@@ -71,7 +70,7 @@ class ThemesModule : Module() {
 
     private fun getTheme(): Theme? {
         val themeFile = File(param.appInfo.dataDir, "${Constants.FILES_DIR}/${THEME_FILE}").apply { asFile() }
-        if (!themeFile.isValidish()) return null
+        if (!themeFile.isValidThemeFile()) return null
 
         return try {
             val themeText = themeFile.readText()

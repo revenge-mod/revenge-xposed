@@ -9,7 +9,7 @@ import io.github.revenge.xposed.Utils.Log
  * Hooks Discord's crash reporting to disable Sentry initialization.
  * While Discord doesn't have Sentry auto-initialization on by default, we still hook the content provider just to be safe.
  */
-class BlockCrashReportingModule : Module() {
+object BlockCrashReportingModule : Module() {
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         val crashReportingClass = classLoader.safeLoadClass("com.discord.crash_reporting.CrashReporting")
         crashReportingClass?.hookMethod(

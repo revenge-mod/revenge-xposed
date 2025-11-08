@@ -35,12 +35,10 @@ data class FontDefinition(
     val main: Map<String, String>,
 )
 
-class FontsModule : Module() {
-    private companion object {
-        val EXTENSIONS = arrayOf("", "_bold", "_italic", "_bold_italic")
-        val FILE_EXTENSIONS = arrayOf(".ttf", ".otf")
-        const val FONTS_ASSET_PATH = "fonts/"
-    }
+object FontsModule : Module() {
+    private val EXTENSIONS = arrayOf("", "_bold", "_italic", "_bold_italic")
+    private val FILE_EXTENSIONS = arrayOf(".ttf", ".otf")
+    private const val FONTS_ASSET_PATH = "fonts/"
 
     private lateinit var fontsDir: File
     private lateinit var fontsDownloadsDir: File
