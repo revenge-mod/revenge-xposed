@@ -33,7 +33,7 @@ object HookStateHolder {
     var gotContext = false
 }
 
-object Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
+class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
     private var hooked = false
     private val modules = mutableListOf(
         HookScriptLoaderModule,
