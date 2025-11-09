@@ -5,6 +5,7 @@ import android.util.AtomicFile
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
 import io.github.revenge.xposed.modules.bridge.BridgeModule
+import io.github.revenge.xposed.modules.bridge.asDelegate
 import java.io.*
 
 /**
@@ -65,11 +66,12 @@ object CacheModule : Module() {
         }
 
         BridgeModule.registerMethod("revenge.caches.modules.write") {
-            val (blacklist, finds) = it
-            @Suppress("UNCHECKED_CAST")
-            modulesCache = ModulesCache(
-                blacklist as ArrayList<Double>, finds as HashMap<String, HashMap<String, Double>?>
-            ).apply { saveToFile(modulesCacheFile) }
+            val args = it.asDelegate()
+            val blacklist by args.arrayList<Double>()
+            val finds by args.hashMap<String, HashMap<String, Double>?>()
+
+            modulesCache = ModulesCache(blacklist, finds).apply { saveToFile(modulesCacheFile) }
+
             Log.i("Modules cache saved: ${modulesCacheFile.absolutePath} (blacklisted: ${blacklist.size}, finds: ${finds.size})")
         }
 
@@ -82,10 +84,10 @@ object CacheModule : Module() {
         }
 
         BridgeModule.registerMethod("revenge.caches.assets.write") {
-            val (data) = it
-            @Suppress("UNCHECKED_CAST")
-            assetsCache =
-                AssetsCache(data as HashMap<String, HashMap<String, Double>>).apply { saveToFile(assetsCacheFile) }
+            val args = it.asDelegate()
+            val data by args.hashMap<String, HashMap<String, Double>>()
+
+            assetsCache = AssetsCache(data).apply { saveToFile(assetsCacheFile) }
             Log.i("Assets cache saved: ${assetsCacheFile.absolutePath} (count: ${data.size})")
         }
     }

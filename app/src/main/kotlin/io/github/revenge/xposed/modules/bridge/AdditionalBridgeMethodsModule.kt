@@ -22,41 +22,53 @@ object AdditionalBridgeMethodsModule : Module() {
         }
 
         BridgeModule.registerMethod("revenge.fs.delete") {
-            val (path) = it
-            File(path as String).run {
+            val args = it.asDelegate()
+            val path by args.string()
+
+            File(path).run {
                 if (this.isDirectory) this.deleteRecursively()
                 else this.delete()
             }
         }
 
         BridgeModule.registerMethod("revenge.fs.exists") {
-            val (path) = it
-            File(path as String).exists()
+            val args = it.asDelegate()
+            val path by args.string()
+
+            File(path).exists()
         }
 
         BridgeModule.registerMethod("revenge.fs.read") { it ->
-            val (path) = it
-            val file = File(path as String).apply { openFileGuarded() }
+            val args = it.asDelegate()
+            val path by args.string()
+
+            val file = File(path).apply { openFileGuarded() }
 
             file.bufferedReader().use { it.readText() }
         }
 
         BridgeModule.registerMethod("revenge.fs.write") {
-            val (path, contents) = it
-            val file = File(path as String).apply { openFileGuarded() }
+            val args = it.asDelegate()
+            val path by args.string()
+            val contents by args.string()
 
-            file.writeText(contents as String)
+            File(path).run {
+                openFileGuarded()
+                writeText(contents)
+            }
         }
     }
 
     override fun onActivity(activity: Activity) = with(activity) {
         BridgeModule.registerMethod("revenge.alertError") {
-            val (error, version) = it
+            val args = it.asDelegate()
+            val error by args.string()
+            val version by args.string()
+
             val app = getAppInfo()
-            val errorString = "$error"
 
             val clipboard = applicationContext.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("Stack Trace", errorString)
+            val clip = ClipData.newPlainText("Stack Trace", error)
 
             AlertDialog.Builder(this)
                 .setTitle("Revenge Error")
@@ -67,7 +79,7 @@ object AdditionalBridgeMethodsModule : Module() {
                     Device: ${Build.MANUFACTURER} ${Build.MODEL}
                     
                     
-                """.trimIndent() + errorString
+                """.trimIndent() + error
                 )
                 .setPositiveButton("OK") { dialog, _ ->
                     dialog.dismiss()
