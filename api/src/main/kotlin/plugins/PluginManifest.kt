@@ -1,4 +1,4 @@
-package io.github.revenge.xposed.plugins
+package io.github.revenge.plugins
 
 /**
  * Information about a plugin.

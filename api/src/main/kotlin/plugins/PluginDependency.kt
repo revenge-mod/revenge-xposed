@@ -1,4 +1,4 @@
-package io.github.revenge.xposed.plugins
+package io.github.revenge.plugins
 
 /**
  * JS plugin dependency.

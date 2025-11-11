@@ -2,10 +2,11 @@
 
 package io.github.revenge.xposed.modules.bridge
 
+import io.github.revenge.plugins.MethodArgs
 import kotlin.properties.ReadOnlyProperty
 
 /**
- * Turn [BridgeMethodArgs] into a delegate-friendly reader.
+ * Turn [io.github.revenge.plugins.MethodArgs] into a delegate-friendly reader.
  *
  * Example:
  * ```kotlin
@@ -21,7 +22,7 @@ import kotlin.properties.ReadOnlyProperty
  * }
  * ```
  */
-fun BridgeMethodArgs.asDelegate(): ArgsDelegate = ArgsDelegate(this)
+fun MethodArgs.asDelegate(): ArgsDelegate = ArgsDelegate(this)
 
 /**
  * Provides property-delegate style, typed access to a positional argument list.
