@@ -1,21 +1,13 @@
 package io.github.revenge.xposed.modules.bridge
 
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import io.github.revenge.plugins.MethodArgs
+import io.github.revenge.plugins.MethodCallback
 import io.github.revenge.xposed.BuildConfig
 import io.github.revenge.xposed.Constants
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
 import java.lang.reflect.Method
-
-/**
- * See for possible return types:
- * https://github.com/facebook/react-native/blob/c23e84ae9/packages/react-native/ReactAndroid/src/main/java/com/facebook/react/bridge/Arguments.kt#L19
- *
- * You may return a [Unit] and the resulting value will be `null`.
- */
-typealias BridgeMethodCallback = (args: BridgeMethodArgs) -> Any?
-
-typealias BridgeMethodArgs = ArrayList<Any>
 
 /**
  * A module that exposes a bridge for calling methods from JavaScript.
@@ -54,7 +46,7 @@ object BridgeModule : Module() {
     private const val METHOD_NAME_KEY = "method"
     private const val METHOD_ARGS_KEY = "args"
 
-    private val methods: MutableMap<String, BridgeMethodCallback> = mutableMapOf()
+    private val methods: MutableMap<String, MethodCallback> = mutableMapOf()
 
     /**
      * Registers a bridge method that can be called from JavaScript.
@@ -64,7 +56,7 @@ object BridgeModule : Module() {
      * @param name The name of the method to register.
      * @param callback The callback to invoke when the method is called.
      */
-    fun registerMethod(name: String, callback: BridgeMethodCallback) {
+    fun registerMethod(name: String, callback: MethodCallback) {
         if (methods.containsKey(name)) Log.w("Bridge method already exists and will be overridden: $name")
         methods[name] = callback
     }
@@ -142,7 +134,7 @@ object BridgeModule : Module() {
         mapOf("error" to e.stackTraceToString())
     }
 
-    private fun getBridgeCallData(hashMap: HashMap<String, Any?>): Pair<BridgeMethodCallback, BridgeMethodArgs>? {
+    private fun getBridgeCallData(hashMap: HashMap<String, Any?>): Pair<MethodCallback, MethodArgs>? {
         @Suppress("UNCHECKED_CAST") val data = hashMap[CALL_DATA_KEY] as HashMap<String, Any?>?
         data ?: return null
 
@@ -150,7 +142,7 @@ object BridgeModule : Module() {
         val method = methods[name]
         method ?: throw Error("Method not registered: $name")
 
-        @Suppress("UNCHECKED_CAST") val args = data[METHOD_ARGS_KEY] as BridgeMethodArgs
+        @Suppress("UNCHECKED_CAST") val args = data[METHOD_ARGS_KEY] as MethodArgs
 
         return Pair(method, args)
     }

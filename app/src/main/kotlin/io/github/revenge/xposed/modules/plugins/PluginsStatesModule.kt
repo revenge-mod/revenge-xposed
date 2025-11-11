@@ -2,23 +2,19 @@ package io.github.revenge.xposed.modules.plugins
 
 import android.util.AtomicFile
 import de.robv.android.xposed.callbacks.XC_LoadPackage.LoadPackageParam
+import io.github.revenge.plugins.Plugin
+import io.github.revenge.plugins.PluginFlags
+import io.github.revenge.plugins.PluginView
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils.Log
 import io.github.revenge.xposed.modules.bridge.BridgeModule
 import io.github.revenge.xposed.modules.bridge.asDelegate
-import io.github.revenge.xposed.plugins.Plugin
 import java.io.*
-
-enum class PluginFlags(val value: Int) {
-    ENABLED(1 shl 0),
-    RELOAD_REQUIRED(1 shl 1),
-    ERRORED(1 shl 2),
-    ENABLED_LATE(1 shl 3),
-}
 
 enum class InternalPluginFlags(val value: Int) {
     INTERNAL(1 shl 0),
     ESSENTIAL(1 shl 1),
+    ENABLED_BY_DEFAULT(1 shl 2),
 }
 
 /**
@@ -70,7 +66,7 @@ object PluginsStatesModule : Module() {
             readStatesOrNull()?.apply {
                 setPluginFlags(
                     pluginId,
-                    PluginFlags.entries.filter { flag -> (pluginFlags and flag.value) != 0 }.toSet()
+                    PluginFlags.entries.filter { flag -> (pluginFlags and flag.value) != 0 }
                 )
                 write()
             }
@@ -116,9 +112,9 @@ object PluginsStatesModule : Module() {
         }
     }
 
-    fun updatePluginFlags(plugin: Plugin) {
-        plugin.flags.filter { it in PERSISTENT_PLUGIN_FLAGS }.let { persistentFlags ->
-            states.setPluginFlags(plugin.manifest.id, persistentFlags)
+    fun updatePluginFlags(view: PluginView) {
+        view.flags.filter { it in PERSISTENT_PLUGIN_FLAGS }.let { persistentFlags ->
+            states.setPluginFlags(view.manifest.id, persistentFlags)
         }
 
         states.write()
@@ -161,6 +157,11 @@ data class PluginsStates(
     fun isPluginEnabled(pluginId: String): Boolean {
         val pluginFlags = flags[pluginId]?.toInt() ?: return false
         return (pluginFlags and PluginFlags.ENABLED.value) != 0
+    }
+
+    @Synchronized
+    fun hasPlugin(pluginId: String): Boolean {
+        return flags.containsKey(pluginId)
     }
 
     @Synchronized
