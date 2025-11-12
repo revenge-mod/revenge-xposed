@@ -1,11 +1,17 @@
 package io.github.revenge.plugins
 
 /**
- * See for possible return types:
- * https://github.com/facebook/react-native/blob/c23e84ae9/packages/react-native/ReactAndroid/src/main/java/com/facebook/react/bridge/Arguments.kt#L19
+ * You may return a [Unit] and it will be converted to `null`.
  *
- * You may return a [Unit] and the resulting value will be `null`.
+ * See [NativeObject] for more information.
  */
-typealias MethodCallback = (args: MethodArgs) -> Any?
+typealias MethodCallback = (args: MethodArgs) -> NativeObject
 
-typealias MethodArgs = ArrayList<Any?>
+typealias MethodArgs = ArrayList<NativeObject>
+
+/**
+ * Represents a React Native JNI serializable object. These objects can be passed to JavaScript as values.
+ *
+ * See: https://github.com/facebook/react-native/blob/7dcedf1/packages/react-native/ReactAndroid/src/main/java/com/facebook/react/bridge/Arguments.kt#L19
+ */
+typealias NativeObject = Any?
