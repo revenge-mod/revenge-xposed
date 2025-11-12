@@ -47,6 +47,7 @@ class Utils {
         }
     }
 
+
     object Log {
         fun e(msg: String) = android.util.Log.e(Constants.LOG_TAG, msg)
         fun e(msg: String, throwable: Throwable) = android.util.Log.e(Constants.LOG_TAG, msg, throwable)

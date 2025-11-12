@@ -1,69 +1,35 @@
 package io.github.revenge.plugins
 
 import InternalApi
-import android.content.Context
 import android.content.pm.ApplicationInfo
-import io.github.revenge.plugins.impl.PluginsHost
-import java.util.*
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.write
+import kotlin.properties.ReadOnlyProperty
 
-@OptIn(InternalApi::class)
-abstract class Plugin(val manifest: PluginManifest) {
-    private val flagsLock = ReentrantReadWriteLock()
-    private val _flags: MutableSet<PluginFlags> = mutableSetOf()
+typealias Callback = Plugin.(args: ArrayList<Any>) -> Any
 
-    /**
-     * The current flags set for the plugin.
-     *
-     * The returned set is a copy and modifying it does not affect the plugin's flags.
-     * To update the flags, assign a new set to this property.
-     *
-     * Example:
-     *
-     * ```kotlin
-     * plugin.flags += + PluginFlags.RELOAD_REQUIRED
-     * ```
-     *
-     * See [PluginFlags] for all possible flags.
-     */
-    var flags: Set<PluginFlags>
-        get() = flagsLock.read { Collections.unmodifiableSet(_flags) }
-        set(value) = flagsLock.write {
-            val oldValue = _flags.toSet()
-            if (oldValue != value) {
-                _flags.clear()
-                _flags.addAll(value)
-                PluginsHost.notifyFlagsUpdate(this)
-            }
-        }
+class PluginBuilder() {
+    private val methods: MutableMap<String, Callback> = mutableMapOf()
+    private var init: ((ApplicationInfo, ClassLoader) -> Unit)? = null
 
-    /**
-     * Runs when the plugin is loaded, before [start].
-     */
-    open fun init(applicationInfo: ApplicationInfo, classLoader: ClassLoader) {}
+    operator fun String.invoke(callback: Callback) = apply { methods[this] = callback }
 
-    /**
-     * Runs when the plugin is able to access [Context].
-     */
-    open fun start(context: Context) {}
+    fun init(block: (ApplicationInfo, ClassLoader) -> Unit) = apply { init = block }
 
-    /**
-     * Runs when the plugin is being stopped.
-     */
-    open fun stop(context: Context) {}
+    fun build(jsCaller: (methodName: String, args: Any) -> Any) = Plugin(init, methods, jsCaller)
+}
 
-    /**
-     * Returns a map of method names to their corresponding bridge method callbacks.
-     * These methods will be exposed to the JavaScript side of the application.
-     *
-     * This method is called immediately after [init]. If you need [Context], return a lambda that captures it from [start].
-     *
-     * See [MethodCallback] for possible return types.
-     */
-    open fun getMethods(
-        applicationInfo: ApplicationInfo,
-        classLoader: ClassLoader
-    ): Map<String, MethodCallback> = mapOf()
+fun plugin(block: PluginBuilder.() -> Unit) = PluginBuilder().apply(block)
+
+
+class Plugin internal constructor(
+    @OptIn(InternalApi::class) val init: ((ApplicationInfo, ClassLoader) -> Unit)?,
+    @OptIn(InternalApi::class) val methods: Map<String, Callback>,
+    val jsCaller: (methodName: String, args: Any) -> Any,
+) {
+    operator fun String.invoke(vararg args: Any) = jsCaller(this, args.toList())
+}
+
+val p = plugin {
+    "name" {
+        "jsFunc"("args", 1)
+    }
 }
