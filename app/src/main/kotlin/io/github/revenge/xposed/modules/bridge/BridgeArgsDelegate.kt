@@ -6,7 +6,7 @@ import io.github.revenge.plugins.MethodArgs
 import kotlin.properties.ReadOnlyProperty
 
 /**
- * Turn [io.github.revenge.plugins.MethodArgs] into a delegate-friendly reader.
+ * Turn [MethodArgs] into a delegate-friendly reader.
  *
  * Example:
  * ```kotlin

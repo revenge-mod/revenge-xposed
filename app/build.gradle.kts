@@ -41,6 +41,8 @@ android {
 dependencies {
     compileOnly("de.robv.android.xposed:api:82")
 
+    implementation(project(":api"))
+
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
