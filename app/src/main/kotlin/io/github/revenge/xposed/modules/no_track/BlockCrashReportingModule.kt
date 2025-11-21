@@ -24,10 +24,13 @@ object BlockCrashReportingModule : Module() {
                 }
             }
 
-            hookMethod("isDisabled") {
-                before {
-                    Log.i("Forced CrashReporting.isDisabled() to true")
-                    result = true
+            // This only exists on 30720x and above
+            runCatching {
+                hookMethod("isDisabled") {
+                    before {
+                        Log.i("Forced CrashReporting.isDisabled() to true")
+                        result = true
+                    }
                 }
             }
         }
