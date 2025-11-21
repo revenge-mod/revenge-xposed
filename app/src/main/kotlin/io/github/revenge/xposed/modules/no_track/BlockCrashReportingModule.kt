@@ -12,12 +12,23 @@ import io.github.revenge.xposed.Utils.Log
 object BlockCrashReportingModule : Module() {
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         val crashReportingClass = classLoader.safeLoadClass("com.discord.crash_reporting.CrashReporting")
-        crashReportingClass?.hookMethod(
-            "init", Context::class.java, String::class.java
-        ) {
-            before {
-                Log.i("Blocked CrashReporting initialization")
-                result = null
+        crashReportingClass?.apply {
+            // Hooking this will result in a crash after a few seconds, since Discord expects initialization to complete when setting a Sentry tag.
+            // So we also hook isDisabled to make sure those calls are no-ops.
+            hookMethod(
+                "init", Context::class.java, String::class.java
+            ) {
+                before {
+                    Log.i("Blocked CrashReporting initialization")
+                    result = null
+                }
+            }
+
+            hookMethod("isDisabled") {
+                before {
+                    Log.i("Forced CrashReporting.isDisabled() to true")
+                    result = true
+                }
             }
         }
 
