@@ -24,17 +24,11 @@ object LogBoxModule : Module() {
         this@LogBoxModule.packageParam = packageParam
 
         // enable bridgeless dev menu only in debug builds
-        if (BuildConfig.DEBUG) {
-            try {
-                val dcdReactNativeHostClass = classloaderSafeLoad("com.discord.bridge.DCDReactNativeHost")
-                val getUseDeveloperSupportMethod = dcdReactNativeHostClass?.methods?.firstOrNull { it.name == "getUseDeveloperSupport" }
-                getUseDeveloperSupportMethod?.hook {
-                    before {
-                        result = true
-                    }
-                }
-            } catch (ex: Exception) {
-                Log.e("LogBoxModule.onLoad - failed to hook DCDReactNativeHost/getUseDeveloperSupport: $ex", ex)
+        val dcdReactNativeHostClass = classLoader.safeLoadClass("com.discord.bridge.DCDReactNativeHost")
+        val getUseDeveloperSupportMethod = dcdReactNativeHostClass?.methods?.firstOrNull { it.name == "getUseDeveloperSupport" }
+        getUseDeveloperSupportMethod?.hook {
+            before {
+                result = true
             }
         }
 
@@ -42,14 +36,10 @@ object LogBoxModule : Module() {
     }
 
     override fun onContext(context: Context) {
-        val devManagers = listOf(
+        listOf(
             "com.facebook.react.devsupport.BridgeDevSupportManager",
-            "com.facebook.react.devsupport.BridgelessDevSupportManager",
-            "com.facebook.react.devsupport.DevSupportManagerImpl",
-            "com.facebook.react.devsupport.DevSupportManagerBase"
-        )
-
-        devManagers.mapNotNull { packageParam.classLoader.safeLoadClass(it) }.forEach {
+            "com.facebook.react.devsupport.BridgelessDevSupportManager"
+        ).mapNotNull { packageParam.classLoader.safeLoadClass(it) }.forEach {
             hookDevSupportManager(it, context)
         }
     }
@@ -58,32 +48,24 @@ object LogBoxModule : Module() {
         val handleReloadJSMethod = clazz.methods.firstOrNull { it.name == "handleReloadJS" }
         val showDevOptionsDialogMethod = clazz.methods.firstOrNull { it.name == "showDevOptionsDialog" }
 
+        // Replace the method to direct relaunch the app instead of sending reload command to developer server
         handleReloadJSMethod?.hook {
             before {
-                try {
-                    reloadApp()
-                } catch (ex: Exception) {
-                    Log.e("LogBoxModule.handleReloadJS.before - error while reloading app: $ex", ex)
-                }
+                reloadApp()
                 result = null
             }
         }
 
-        if (showDevOptionsDialogMethod == null) return
-
-        showDevOptionsDialogMethod.hook {
+         // Triggered on shake
+        showDevOptionsDialogMethod?.hook {
             before {
                 try {
                     val targetDebuggable = isTargetAppDebuggable()
-                    if (BuildConfig.DEBUG || targetDebuggable) {
+                    if (targetDebuggable) {
                         return@before
                     }
 
-                    try {
-                        Utils.showRecoveryAlert(context)
-                    } catch (inner: Exception) {
-                        Log.e("LogBoxModule.showDevOptionsDialog.before - failed to show recovery alert: $inner", inner)
-                    }
+                    Utils.showRecoveryAlert(context)
 
                     result = null
                 } catch (ex: Exception) {
@@ -92,7 +74,4 @@ object LogBoxModule : Module() {
             }
         }
     }
-
-    // Helper: safe load using reflection-compatible name resolution
-    private fun classloaderSafeLoad(name: String): Class<*>? = runCatching { packageParam.classLoader.loadClass(name) }.getOrNull()
 }
