@@ -11,17 +11,22 @@ import io.github.revenge.xposed.Utils.Log
 object LogBoxModule : Module() {
     lateinit var packageParam: XC_LoadPackage.LoadPackageParam
 
+    private fun isTargetAppDebuggable(): Boolean {
+        return try {
+            val flags = packageParam.appInfo?.flags ?: 0
+            (flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        } catch (e: Exception) {
+            BuildConfig.DEBUG
+        }
+    }
+
     override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) = with(packageParam) {
         this@LogBoxModule.packageParam = packageParam
 
-        // Only enable this module in debug builds
-        if (!BuildConfig.DEBUG) return@with
-
-        val dcdReactNativeHostClass = classLoader.loadClass("com.discord.bridge.DCDReactNativeHost")
-        val getUseDeveloperSupportMethod = dcdReactNativeHostClass.methods.first { it.name == "getUseDeveloperSupport" }
-
-        // This enables the LogBox and opens dev option on shake
-        getUseDeveloperSupportMethod.hook {
+        // enable bridgeless dev menu only in debug builds
+        val dcdReactNativeHostClass = classLoader.safeLoadClass("com.discord.bridge.DCDReactNativeHost")
+        val getUseDeveloperSupportMethod = dcdReactNativeHostClass?.methods?.firstOrNull { it.name == "getUseDeveloperSupport" }
+        getUseDeveloperSupportMethod?.hook {
             before {
                 result = true
             }
@@ -34,32 +39,38 @@ object LogBoxModule : Module() {
         listOf(
             "com.facebook.react.devsupport.BridgeDevSupportManager",
             "com.facebook.react.devsupport.BridgelessDevSupportManager"
-        ).mapNotNull { packageParam.classLoader.safeLoadClass(it) }.forEach { hookDevSupportManager(it, context) }
+        ).mapNotNull { packageParam.classLoader.safeLoadClass(it) }.forEach {
+            hookDevSupportManager(it, context)
+        }
     }
 
     private fun hookDevSupportManager(clazz: Class<*>, context: Context) {
-        val handleReloadJSMethod = clazz.methods.first { it.name == "handleReloadJS" }
-        val showDevOptionsDialogMethod = clazz.methods.first { it.name == "showDevOptionsDialog" }
+        val handleReloadJSMethod = clazz.methods.firstOrNull { it.name == "handleReloadJS" }
+        val showDevOptionsDialogMethod = clazz.methods.firstOrNull { it.name == "showDevOptionsDialog" }
 
         // Replace the method to direct relaunch the app instead of sending reload command to developer server
-        handleReloadJSMethod.hook {
+        handleReloadJSMethod?.hook {
             before {
                 reloadApp()
                 result = null
             }
         }
 
-        // Triggered on shake
-        showDevOptionsDialogMethod.hook {
+         // Triggered on shake
+        showDevOptionsDialogMethod?.hook {
             before {
                 try {
-                    Utils.showRecoveryAlert(context)
-                } catch (ex: Exception) {
-                    Log.e("Failed to show dev options dialog: $ex")
-                }
+                    val targetDebuggable = isTargetAppDebuggable()
+                    if (targetDebuggable) {
+                        return@before
+                    }
 
-                // Ignore the original dev menu
-                param.result = null
+                    Utils.showRecoveryAlert(context)
+
+                    result = null
+                } catch (ex: Exception) {
+                    Log.e("LogBoxModule.showDevOptionsDialog.before - unexpected exception: $ex", ex)
+                }
             }
         }
     }
