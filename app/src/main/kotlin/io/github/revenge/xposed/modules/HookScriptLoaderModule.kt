@@ -83,9 +83,17 @@ object HookScriptLoaderModule : Module() {
 
         runBlocking {
             val ready = async { HookStateHolder.readyDeferred.join() }
-            val download = async { UpdaterModule.downloadScript().join() }
 
-            awaitAll(ready, download)
+            if (mainScript.exists()) {
+                Log.i("Main script exists, updating in background...")
+                UpdaterModule.downloadScript()
+                
+                ready.await()
+            } else {
+                Log.i("Main script does not exist, downloading before load...")
+                val download = async { UpdaterModule.downloadScript().join() }
+                awaitAll(ready, download)
+            }
         }
 
         val loadSynchronously = args[2]
