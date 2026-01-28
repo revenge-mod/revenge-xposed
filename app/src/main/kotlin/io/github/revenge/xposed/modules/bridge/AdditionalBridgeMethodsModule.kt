@@ -9,6 +9,7 @@ import android.os.Build
 import android.widget.Toast
 import io.github.revenge.xposed.Module
 import io.github.revenge.xposed.Utils
+import io.github.revenge.xposed.Utils.Companion.reloadApp
 import java.io.File
 
 object AdditionalBridgeMethodsModule : Module() {
@@ -46,6 +47,11 @@ object AdditionalBridgeMethodsModule : Module() {
             val file = File(path as String).apply { openFileGuarded() }
 
             file.writeText(contents as String)
+        }
+
+        BridgeModule.registerMethod("revenge.app.reload") {
+            reloadApp()
+            null
         }
     }
 

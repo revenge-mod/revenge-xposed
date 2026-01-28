@@ -13,6 +13,7 @@ import io.github.revenge.xposed.Utils
 import io.github.revenge.xposed.Utils.Companion.JSON
 import io.github.revenge.xposed.Utils.Companion.reloadApp
 import io.github.revenge.xposed.Utils.Log
+import io.github.revenge.xposed.modules.bridge.BridgeModule
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -71,6 +72,12 @@ object UpdaterModule : Module() {
                 JSON.decodeFromString<LoaderConfig>(configFile.readText())
             } else LoaderConfig()
         }.getOrDefault(LoaderConfig())
+
+        BridgeModule.registerMethod("revenge.updater.clear") {
+            if (bundle.exists()) bundle.delete()
+            if (etag.exists()) etag.delete()
+            null
+        }
     }
 
     fun downloadScript(activity: Activity? = null): Job = scope.launch {
