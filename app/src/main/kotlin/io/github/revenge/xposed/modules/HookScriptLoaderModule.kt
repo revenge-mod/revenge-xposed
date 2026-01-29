@@ -86,12 +86,11 @@ object HookScriptLoaderModule : Module() {
 
             if (mainScript.exists()) {
                 Log.i("Main script exists, updating in background...")
-                UpdaterModule.downloadScript()
-                
+                UpdaterModule.downloadScript(showUpdateDialog = true)
                 ready.await()
             } else {
                 Log.i("Main script does not exist, downloading before load...")
-                val download = async { UpdaterModule.downloadScript().join() }
+                val download = async { UpdaterModule.downloadScript(showUpdateDialog = false).join() }
                 awaitAll(ready, download)
             }
         }

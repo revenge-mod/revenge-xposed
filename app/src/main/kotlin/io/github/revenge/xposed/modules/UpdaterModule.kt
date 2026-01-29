@@ -80,7 +80,7 @@ object UpdaterModule : Module() {
         }
     }
 
-    fun downloadScript(activity: Activity? = null): Job = scope.launch {
+    fun downloadScript(activity: Activity? = null, showUpdateDialog: Boolean = true): Job = scope.launch {
         try {
             HttpClient(CIO) {
                 expectSuccess = false
@@ -115,15 +115,22 @@ object UpdaterModule : Module() {
 
                         Log.i("Bundle updated (${bytes.size} bytes)")
 
-                        // This is a retry, so we show a dialog
-                        if (activity != null) {
-                            withContext(Dispatchers.Main) {
-                                AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
+                        if (showUpdateDialog) {
+                            val activity = activity ?: lastActivity?.get()
+
+                            activity?.runOnUiThread {
+                                AlertDialog.Builder(activity)
+                                    .setTitle("Revenge Update Downloaded")
                                     .setMessage("A reload is required for changes to take effect.")
                                     .setPositiveButton("Reload") { dialog, _ ->
                                         reloadApp()
                                         dialog.dismiss()
-                                    }.setCancelable(false).show()
+                                    }
+                                    .setNegativeButton("Later") { dialog, _ ->
+                                        dialog.dismiss()
+                                    }
+                                    .setCancelable(false)
+                                    .show()
                             }
                         }
                     }
