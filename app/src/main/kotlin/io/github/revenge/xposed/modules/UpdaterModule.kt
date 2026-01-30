@@ -43,6 +43,8 @@ data class LoaderConfig(
  */
 object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
+    val isCustomUrlEnabled: Boolean
+        get() = config.customLoadUrl.enabled
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lastActivity: WeakReference<Activity>? = null
 
