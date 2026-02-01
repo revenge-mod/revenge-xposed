@@ -83,9 +83,19 @@ object HookScriptLoaderModule : Module() {
 
         runBlocking {
             val ready = async { HookStateHolder.readyDeferred.join() }
-            val download = async { UpdaterModule.downloadScript().join() }
+            val isCustomUrl = UpdaterModule.isCustomUrlEnabled
 
-            awaitAll(ready, download)
+            if (!mainScript.exists() || isCustomUrl) {
+                val reason = if (isCustomUrl) "Custom URL enabled" else "Main script does not exist"
+                Log.i("$reason, downloading before load...")
+                val download =
+                    async { UpdaterModule.downloadScript(showUpdateDialog = false).join() }
+                awaitAll(ready, download)
+            } else {
+                Log.i("Main script exists, updating in background...")
+                UpdaterModule.downloadScript(showUpdateDialog = true)
+                ready.await()
+            }
         }
 
         val loadSynchronously = args[2]

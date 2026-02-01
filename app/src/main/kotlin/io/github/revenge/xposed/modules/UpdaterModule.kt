@@ -13,6 +13,7 @@ import io.github.revenge.xposed.Utils
 import io.github.revenge.xposed.Utils.Companion.JSON
 import io.github.revenge.xposed.Utils.Companion.reloadApp
 import io.github.revenge.xposed.Utils.Log
+import io.github.revenge.xposed.modules.bridge.BridgeModule
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -42,6 +43,8 @@ data class LoaderConfig(
  */
 object UpdaterModule : Module() {
     private lateinit var config: LoaderConfig
+    val isCustomUrlEnabled: Boolean
+        get() = config.customLoadUrl.enabled
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var lastActivity: WeakReference<Activity>? = null
 
@@ -71,9 +74,15 @@ object UpdaterModule : Module() {
                 JSON.decodeFromString<LoaderConfig>(configFile.readText())
             } else LoaderConfig()
         }.getOrDefault(LoaderConfig())
+
+        BridgeModule.registerMethod("revenge.updater.clear") {
+            if (bundle.exists()) bundle.delete()
+            if (etag.exists()) etag.delete()
+            null
+        }
     }
 
-    fun downloadScript(activity: Activity? = null): Job = scope.launch {
+    fun downloadScript(activity: Activity? = null, showUpdateDialog: Boolean = true): Job = scope.launch {
         try {
             HttpClient(CIO) {
                 expectSuccess = false
@@ -108,15 +117,22 @@ object UpdaterModule : Module() {
 
                         Log.i("Bundle updated (${bytes.size} bytes)")
 
-                        // This is a retry, so we show a dialog
-                        if (activity != null) {
-                            withContext(Dispatchers.Main) {
-                                AlertDialog.Builder(activity).setTitle("Revenge Update Successful")
+                        if (showUpdateDialog) {
+                            val activity = activity ?: lastActivity?.get()
+
+                            activity?.runOnUiThread {
+                                AlertDialog.Builder(activity)
+                                    .setTitle("Revenge Update Downloaded")
                                     .setMessage("A reload is required for changes to take effect.")
                                     .setPositiveButton("Reload") { dialog, _ ->
                                         reloadApp()
                                         dialog.dismiss()
-                                    }.setCancelable(false).show()
+                                    }
+                                    .setNegativeButton("Later") { dialog, _ ->
+                                        dialog.dismiss()
+                                    }
+                                    .setCancelable(false)
+                                    .show()
                             }
                         }
                     }
