@@ -2,109 +2,84 @@ package io.github.revenge.xposed
 
 import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
-import android.os.Bundle
+import android.content.pm.ApplicationInfo
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.IXposedHookZygoteInit
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import io.github.revenge.xposed.Utils.Log
-import io.github.revenge.xposed.modules.*
-import io.github.revenge.xposed.modules.appearance.FontsModule
-import io.github.revenge.xposed.modules.appearance.SysColorsModule
-import io.github.revenge.xposed.modules.appearance.ThemesModule
-import io.github.revenge.xposed.modules.bridge.AdditionalBridgeMethodsModule
-import io.github.revenge.xposed.modules.bridge.BridgeModule
-import io.github.revenge.xposed.modules.no_track.BlockCrashReportingModule
-import io.github.revenge.xposed.modules.no_track.BlockDeepLinksTrackingModule
-import io.github.revenge.xposed.modules.plugins.PluginsLoaderModule
-import io.github.revenge.xposed.modules.plugins.PluginsStatesModule
-import kotlinx.coroutines.CompletableDeferred
+import io.github.revenge.bridge.RevengeBridge
+import io.github.revenge.xposed.api.HostScope
+import io.github.revenge.xposed.tweaks.*
+import io.github.revenge.xposed.tweaks.base.lifecycleSupport
+import io.github.revenge.xposed.tweaks.base.scriptLoader
+import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
+import io.github.revenge.xposed.tweaks.bridge.additionalBridgeMethods
+import io.github.revenge.xposed.tweaks.bridge.revengeBridgeSupport
+import io.github.revenge.xposed.tweaks.legacy.appearance.fonts
+import io.github.revenge.xposed.tweaks.legacy.appearance.sysColors
+import io.github.revenge.xposed.tweaks.legacy.appearance.themes
+import io.github.revenge.xposed.tweaks.legacy.revengePayloadGlobal
+import io.github.revenge.xposed.tweaks.plugins.pluginLoader
+import io.github.revenge.xposed.tweaks.plugins.pluginStates
 
-object HookStateHolder {
-    /**
-     * Whether all hooks are completed, and we are ready to load the JS bundle.
-     */
-    val readyDeferred = CompletableDeferred<Unit>()
+private lateinit var modulePath: String
 
-    /**
-     * Whether we have successfully received a [Context] yet.
-     * Sometimes the app process is recreated and Xposed hooks way too late for us to get [Context] from [ContextWrapper.attachBaseContext].
-     * But since Xposed hooks before [Activity.onCreate], we can still get it from there and still initialize properly.
-     */
+@Suppress("UNUSED")
+class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
     @Volatile
-    var gotContext = false
-}
-
-class Main : Module(), IXposedHookLoadPackage, IXposedHookZygoteInit {
     private var hooked = false
-    private val modules = mutableListOf(
-        HookScriptLoaderModule,
-        BridgeModule,
-        AdditionalBridgeMethodsModule,
-        PluginsStatesModule,
-        PluginsLoaderModule,
-        UpdaterModule,
-        FixResourcesModule,
-        BlockDeepLinksTrackingModule,
-        BlockCrashReportingModule,
-        LogBoxModule,
-        CacheModule,
-        FontsModule,
-        ThemesModule,
-        SysColorsModule
+
+    private val tweaks: List<TweakSpec> = listOf(
+        // Framework
+        lifecycleSupport,
+        revengeBridgeSupport,
+        scriptLoader,
+
+        // Static patches
+        fixResources,
+
+        // Persistence
+        caches,
+        pluginStates,
+
+        // Async updater
+        revengeUpdater,
+
+        // Consumers
+        discordDevSupport,
+        revengeRecovery,
+        additionalBridgeMethods,
+        fonts,
+        themes,
+        sysColors,
+        pluginLoader,
+        revengeScriptLoader,
+        revengePayloadGlobal,
     )
 
-    init {
-        modules += PayloadGlobalModule(modules)
-    }
-
     override fun initZygote(startupParam: IXposedHookZygoteInit.StartupParam) {
-        for (module in modules) module.onInit(startupParam)
+        modulePath = startupParam.modulePath
     }
 
-    override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) = with(param) {
+    override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) {
         if (hooked) return
-
-        val reactActivity = classLoader.loadClass(Constants.TARGET_ACTIVITY)
-
-        ContextWrapper::class.java.hookMethod("attachBaseContext", Context::class.java) {
-            after {
-                val ctx = args[0] as Context
-                HookStateHolder.gotContext = true
-                Log.i("Received Context")
-                this@Main.onContext(ctx)
-            }
-        }
-
-        reactActivity.hookMethod("onCreate", Bundle::class.java) {
-            after {
-                val act = thisObject as Activity
-                Log.i("Received Activity")
-
-                if (!HookStateHolder.gotContext) {
-                    Log.w("Activity created before we got Context, process may have been recreated!")
-                    this@Main.onContext(act.applicationContext)
-                }
-
-                this@Main.onActivity(act)
-                HookStateHolder.readyDeferred.complete(Unit)
-            }
-        }
-
-        this@Main.onLoad(param)
-
         hooked = true
-    }
 
-    override fun onLoad(packageParam: XC_LoadPackage.LoadPackageParam) {
-        for (module in modules) module.onLoad(packageParam)
+        val ctx = HostScopeImpl(
+            modulePath = modulePath,
+            appInfo = param.appInfo,
+            classLoader = param.classLoader,
+        )
+        for (spec in tweaks) spec.applyTo(ctx)
     }
+}
 
-    override fun onContext(context: Context) {
-        for (module in modules) module.onContext(context)
-    }
-
-    override fun onActivity(activity: Activity) {
-        for (module in modules) module.onActivity(activity)
-    }
+private class HostScopeImpl(
+    override val modulePath: String,
+    override val appInfo: ApplicationInfo,
+    override val classLoader: ClassLoader,
+) : HostScope {
+    override val bridge: RevengeBridge get() = RevengeBridgeRegistry
+    override fun withAppContext(block: (Context) -> Unit) = io.github.revenge.xposed.tweaks.base.withAppContext(block)
+    override fun withAppActivity(block: (Activity) -> Unit) =
+        io.github.revenge.xposed.tweaks.base.withAppActivity(block)
 }

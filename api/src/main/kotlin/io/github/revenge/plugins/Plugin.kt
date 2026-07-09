@@ -1,69 +1,75 @@
 package io.github.revenge.plugins
 
-import InternalApi
-import android.content.Context
-import android.content.pm.ApplicationInfo
-import io.github.revenge.plugins.impl.PluginsHost
-import java.util.*
-import java.util.concurrent.locks.ReentrantReadWriteLock
-import kotlin.concurrent.read
-import kotlin.concurrent.write
+import io.github.revenge.api.BuildConfig
 
-@OptIn(InternalApi::class)
-abstract class Plugin(val manifest: PluginManifest) {
-    private val flagsLock = ReentrantReadWriteLock()
-    private val _flags: MutableSet<PluginFlags> = mutableSetOf()
+/**
+ * A Revenge plugin. Use the [plugin] builder to create a plugin.
+ *
+ * Plugins are loaded once, then [start] runs with [PluginScope].
+ * If you need access to [android.content.Context], capture it with `ctx.withAppContext { ... }` inside [start].
+ * Override only what you need; both lifecycle hooks are no-ops by default.
+ */
+abstract class Plugin internal constructor(val manifest: PluginManifest) {
+    /** Called once when the plugin is loaded. Register bridge methods + install hooks here. */
+    open fun start(ctx: PluginScope) {}
 
-    /**
-     * The current flags set for the plugin.
-     *
-     * The returned set is a copy and modifying it does not affect the plugin's flags.
-     * To update the flags, assign a new set to this property.
-     *
-     * Example:
-     *
-     * ```kotlin
-     * plugin.flags += + PluginFlags.RELOAD_REQUIRED
-     * ```
-     *
-     * See [PluginFlags] for all possible flags.
-     */
-    var flags: Set<PluginFlags>
-        get() = flagsLock.read { Collections.unmodifiableSet(_flags) }
-        set(value) = flagsLock.write {
-            val oldValue = _flags.toSet()
-            if (oldValue != value) {
-                _flags.clear()
-                _flags.addAll(value)
-                PluginsHost.notifyFlagsUpdate(this)
-            }
-        }
-
-    /**
-     * Runs when the plugin is loaded, before [start].
-     */
-    open fun init(applicationInfo: ApplicationInfo, classLoader: ClassLoader) {}
-
-    /**
-     * Runs when the plugin is able to access [Context].
-     */
-    open fun start(context: Context) {}
-
-    /**
-     * Runs when the plugin is being stopped.
-     */
-    open fun stop(context: Context) {}
-
-    /**
-     * Returns a map of method names to their corresponding bridge method callbacks.
-     * These methods will be exposed to the JavaScript side of the application.
-     *
-     * This method is called immediately after [init]. If you need [Context], return a lambda that captures it from [start].
-     *
-     * See [MethodCallback] for possible return types.
-     */
-    open fun getMethods(
-        applicationInfo: ApplicationInfo,
-        classLoader: ClassLoader
-    ): Map<String, MethodCallback> = mapOf()
+    /** Called when the plugin is being torn down. */
+    open fun stop(ctx: PluginScope) {}
 }
+
+data class PluginManifest(
+    val id: String,
+    val name: String,
+    val description: String,
+    val author: String,
+    val icon: String? = null,
+    val dependencies: ArrayList<PluginDependency> = arrayListOf(),
+)
+
+/**
+ * JS plugin dependency.
+ *
+ * Native plugin dependencies can link against other plugins during compile-time instead.
+ */
+data class PluginDependency(
+    val id: String,
+    /**
+     * Optional suggested URL for the dependency.
+     */
+    val url: String? = null,
+)
+
+/**
+ * Minimal [semantic version](https://semver.org) (`major.minor.patch`), comparable by precedence.
+ */
+data class SemVer(
+    val major: Int,
+    val minor: Int,
+    val patch: Int,
+) : Comparable<SemVer> {
+    override fun compareTo(other: SemVer): Int {
+        if (major != other.major) return major.compareTo(other.major)
+        if (minor != other.minor) return minor.compareTo(other.minor)
+        return patch.compareTo(other.patch)
+    }
+
+    override fun toString(): String = "$major.$minor.$patch"
+
+    companion object {
+        /** Parse `"X.Y.Z"` (missing parts default to `0`); pre-release/build suffixes are dropped. */
+        fun parse(value: String): SemVer {
+            val core = value.trim().substringBefore('-').substringBefore('+')
+            val parts = core.split('.')
+            fun part(index: Int) = parts.getOrNull(index)?.toIntOrNull() ?: 0
+            return SemVer(part(0), part(1), part(2))
+        }
+    }
+}
+
+/**
+ * The current Revenge plugin API version.
+ *
+ * An external plugin records the API version it was linked against in its manifest (`api_version`).
+ * The loader compares that against this value to decide whether the plugin is compatible.
+ */
+val API_VERSION: SemVer = SemVer.parse(BuildConfig.API_VERSION)

@@ -1,27 +1,60 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    `maven-publish`
 }
 
 android {
     namespace = "io.github.revenge.api"
-    compileSdk = 36
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 21
+        minSdk = libs.versions.minSdkLibrary.get().toInt()
+
+        buildConfigField("String", "API_VERSION", "\"${libs.versions.apiVersion.get()}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    sourceSets {
+        named("main") {
+            kotlin.srcDirs("src/main/kotlin")
+        }
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
+    }
+
+    kotlin {
+        jvmToolchain(libs.versions.javaVersion.get().toInt())
     }
 }
 
-repositories {
-    google()
-    mavenCentral()
+dependencies {
+    compileOnly(libs.xposed.api)
+    compileOnly(libs.kotlinx.coroutines.android)
 }
 
-dependencies {
-    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+publishing {
+    publications {
+        register<MavenPublication>("release") {
+            groupId = "io.github.revenge"
+            artifactId = "api"
+            version = libs.versions.apiVersion.get()
+
+            afterEvaluate {
+                from(components["release"])
+            }
+        }
+    }
 }

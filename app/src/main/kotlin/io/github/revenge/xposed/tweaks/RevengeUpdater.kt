@@ -1,0 +1,177 @@
+package io.github.revenge.xposed.tweaks
+
+import android.app.AlertDialog
+import android.util.AtomicFile
+import android.widget.Toast
+import androidx.core.util.writeBytes
+import io.github.revenge.logger
+import io.github.revenge.reloadApp
+import io.github.revenge.xposed.RevengeConstants
+import io.github.revenge.xposed.RevengeJson
+import io.github.revenge.xposed.tweak
+import io.github.revenge.xposed.tweaks.base.withAppActivity
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.*
+import io.ktor.client.request.*
+import io.ktor.http.*
+import kotlinx.coroutines.*
+import kotlinx.serialization.Serializable
+import java.io.File
+
+@Serializable
+data class CustomLoadUrl(
+    val enabled: Boolean = false,
+    val url: String = "",
+)
+
+@Serializable
+data class LoaderConfig(
+    val customLoadUrl: CustomLoadUrl = CustomLoadUrl(),
+)
+
+/**
+ * Updater for the JS bundle.
+ *
+ * Handles configuration, downloading, caching, and user-facing retry/recovery dialogs.
+ * The actual loading of the bundle is handled by [revengeScriptLoader].
+ */
+object RevengeUpdater {
+    private const val TIMEOUT_CACHED = 5000L
+    private const val TIMEOUT = 10000L
+    private const val ETAG_PATH = "etag.txt"
+    private const val CONFIG_PATH = "loader.json"
+    private const val DEFAULT_BUNDLE_URL = "https://copyparty.palmdevs.me/revenge.bundle"
+
+    private val log = logger("revengeUpdater")
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var config = LoaderConfig()
+    private lateinit var bundle: File
+    private lateinit var etag: File
+    private lateinit var configFile: File
+
+    private val _downloadReady = CompletableDeferred<Unit>()
+
+    /**
+     * Completes after the *first* download attempt finishes (success or any terminal failure).
+     * [revengeScriptLoader] joins on this before falling through to its fallback bundle.
+     */
+    val downloadReady: Deferred<Unit> = _downloadReady
+
+    internal fun init(dataDir: String) {
+        val cacheDir = File(dataDir, RevengeConstants.CACHE_DIR).apply { mkdirs() }
+        val filesDir = File(dataDir, RevengeConstants.FILES_DIR).apply { mkdirs() }
+
+        bundle = File(cacheDir, RevengeConstants.MAIN_SCRIPT_FILE)
+        etag = File(cacheDir, ETAG_PATH)
+        configFile = File(filesDir, CONFIG_PATH)
+
+        config = runCatching {
+            if (configFile.exists()) RevengeJson.decodeFromString<LoaderConfig>(configFile.readText())
+            else LoaderConfig()
+        }.getOrDefault(LoaderConfig())
+    }
+
+    fun resetLoaderConfig() {
+        if (::configFile.isInitialized && configFile.exists()) configFile.delete()
+    }
+
+    /**
+     * Trigger a download. If [userInitiated] is true (retry from the error dialog), the timeout
+     * is disabled and a success dialog is shown on the next available activity.
+     */
+    fun downloadScript(userInitiated: Boolean = false): Job = scope.launch {
+        try {
+            val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
+            log.i("Fetching JS bundle from: $url")
+
+            HttpClient(CIO) {
+                expectSuccess = false
+                install(UserAgent) { agent = RevengeConstants.USER_AGENT }
+                install(HttpRedirect) {}
+                install(HttpTimeout) {}
+            }.use { client ->
+                val response = client.get(url) {
+                    if (etag.exists() && bundle.exists()) {
+                        headers.append(HttpHeaders.IfNoneMatch, etag.readText())
+                    }
+                    if (!userInitiated) timeout {
+                        requestTimeoutMillis = if (bundle.exists()) TIMEOUT_CACHED else TIMEOUT
+                    }
+                }
+
+                when (response.status) {
+                    HttpStatusCode.OK -> {
+                        val bytes: ByteArray = response.body()
+                        AtomicFile(bundle).writeBytes(bytes)
+
+                        response.headers[HttpHeaders.ETag]
+                            ?.takeIf { it.isNotEmpty() }
+                            ?.let(etag::writeText)
+                            ?: etag.delete()
+
+                        log.i("Bundle updated (${bytes.size} bytes)")
+                        if (userInitiated) showSuccessDialog()
+                    }
+
+                    HttpStatusCode.NotModified -> log.i("Server responded with 304, no changes")
+
+                    else -> throw ResponseException(response, "Received status: ${response.status}")
+                }
+            }
+        } catch (e: Throwable) {
+            log.e("Failed to download script", e)
+            showErrorDialog(e)
+        } finally {
+            _downloadReady.complete(Unit)
+        }
+    }
+
+    private fun showSuccessDialog() = withAppActivity { activity ->
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Revenge Update Successful")
+                .setMessage("A reload is required for changes to take effect.")
+                .setPositiveButton("Reload") { d, _ -> reloadApp(); d.dismiss() }
+                .setCancelable(false)
+                .show()
+        }
+    }
+
+    private fun showErrorDialog(e: Throwable) = withAppActivity { activity ->
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Revenge Update Failed")
+                .setMessage(
+                    """
+                    Unable to download the latest version of Revenge.
+                    This is usually caused by bad network connection.
+
+                    Error: ${e.message ?: e.stackTraceToString()}
+                    """.trimIndent()
+                )
+                .setNegativeButton("Dismiss") { d, _ -> d.dismiss() }
+                .setPositiveButton("Retry Update") { d, _ ->
+                    downloadScript(userInitiated = true)
+                    Toast.makeText(activity, "Retrying download in background...", Toast.LENGTH_SHORT).show()
+                    d.dismiss()
+                }
+                .setNeutralButton("Recovery") { d, _ -> showRecoveryAlert(activity); d.dismiss() }
+                .show()
+        }
+    }
+}
+
+/**
+ * Wires [RevengeUpdater] into the lifecycle. Loads the loader config once the target [android.content.Context]
+ * is available, then kicks off the first download.
+ */
+val revengeUpdater by tweak {
+    withAppContext { ctx ->
+        RevengeUpdater.init(ctx.dataDir.absolutePath)
+        RevengeUpdater.downloadScript()
+    }
+}
