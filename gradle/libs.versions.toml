@@ -1,21 +1,21 @@
 [versions]
-agp = "8.13.2"
-kotlin = "2.2.21"
+agp = "9.2.1"
+kotlin = "2.4.0"
 
 # Published :api version
 apiVersion = "1.0.0"
 
-androidxCore = "1.18.0"
+androidxCore = "1.19.0"
 coroutines = "1.11.0"
-ktor = "3.5.0"
+ktor = "3.5.1"
 serialization = "1.11.0"
 xposed = "82"
 
-compileSdk = "36"
+compileSdk = "37"
 minSdk = "24"
 minSdkLibrary = "21"
-targetSdk = "36"
-javaVersion = "21"
+targetSdk = "37"
+javaVersion = "25"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
@@ -28,5 +28,4 @@ xposed-api = { module = "de.robv.android.xposed:api", version.ref = "xposed" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
