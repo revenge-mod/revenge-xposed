@@ -37,8 +37,8 @@ val additionalBridgeMethods by tweak {
                     
                 """.trimIndent() + errorString
                     )
-                    .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
-                    .setNeutralButton("Copy") { dialog, _ ->
+                    .setPositiveButton(android.R.string.ok) { dialog, _ -> dialog.dismiss() }
+                    .setNeutralButton(android.R.string.copy) { dialog, _ ->
                         clipboard.setPrimaryClip(clip)
                         Toast.makeText(act, "Copied stack trace", Toast.LENGTH_SHORT).show()
                         dialog.dismiss()

@@ -6,17 +6,26 @@ import io.github.revenge.bridge.RevengeBridge
 import io.github.revenge.logger
 import io.github.revenge.xposed.*
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 import java.util.concurrent.CopyOnWriteArrayList
 
 typealias MethodCallback = (args: List<Any?>) -> Any?
+typealias AsyncMethodCallback = suspend (args: List<Any?>) -> Any?
 
 object RevengeBridgeRegistry : RevengeBridge {
     internal val log: Logger = logger("revengeBridge")
 
     private val methods = mutableMapOf<String, MethodCallback>()
+    private val asyncMethods = mutableMapOf<String, AsyncMethodCallback>()
     private val jsCallableReturnQueue = CopyOnWriteArrayList<CompletableDeferred<Any?>>()
+
+    /** Executes async method handlers off the React native-modules thread. */
+    private val dispatchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
     private var reactInstance: WeakReference<Any>? = null
@@ -36,8 +45,15 @@ object RevengeBridgeRegistry : RevengeBridge {
     internal const val NATIVE_METHOD_ARGS_KEY = "args"
 
     override fun registerMethod(name: String, handler: MethodCallback) {
-        if (methods.containsKey(name)) log.w("Bridge method already exists and will be overridden: $name")
+        if (methods.containsKey(name) || asyncMethods.containsKey(name))
+            log.w("Bridge method already exists and will be overridden: $name")
         methods[name] = handler
+    }
+
+    override fun registerAsyncMethod(name: String, handler: AsyncMethodCallback) {
+        if (methods.containsKey(name) || asyncMethods.containsKey(name))
+            log.w("Bridge method already exists and will be overridden: $name")
+        asyncMethods[name] = handler
     }
 
     override suspend fun callJSMethod(name: String, args: List<Any?>): Any? {
@@ -54,7 +70,10 @@ object RevengeBridgeRegistry : RevengeBridge {
         return deferred.await()
     }
 
-    internal fun clearMethods() = methods.clear()
+    internal fun clearMethods() {
+        methods.clear()
+        asyncMethods.clear()
+    }
 
     internal fun captureReactInstance(instance: Any) {
         reactInstance = WeakReference(instance)
@@ -82,8 +101,10 @@ object RevengeBridgeRegistry : RevengeBridge {
         return try {
             val name = callData[NATIVE_METHOD_NAME_KEY] as? String
                 ?: throw Error("Invalid native bridge call data")
-            val handler = methods[name]
-                ?: throw Error("Native bridge method not registered: $name")
+            val handler = methods[name] ?: throw Error(
+                if (name in asyncMethods) "Native bridge method is async-only: $name"
+                else "Native bridge method not registered: $name"
+            )
             val args = callData[NATIVE_METHOD_ARGS_KEY] as? List<Any?>
                 ?: throw Error("Invalid native bridge args (expected List)")
 
@@ -92,6 +113,48 @@ object RevengeBridgeRegistry : RevengeBridge {
         } catch (e: Throwable) {
             mapOf("error" to e.stackTraceToString())
         }
+    }
+
+    /**
+     * Async-capable dispatch for the promise-based bridge path.
+     *
+     * Returns `false` if [rawCallData] wasn't ours (should let the original method run).
+     * Returns `true` when handled. [complete] receives the `{result | error}` payload synchronously
+     * for [registerMethod] handlers (preserving their threading), or later from [dispatchScope] for [registerAsyncMethod] handlers.
+     */
+    @Suppress("UNCHECKED_CAST")
+    internal fun tryDispatchNativeAsync(rawCallData: Any, complete: (Map<String, Any?>) -> Unit): Boolean {
+        val hm = readableMapToHashMap?.invoke(rawCallData) as? HashMap<String, Any?> ?: return false
+        val callData = hm[NATIVE_CALL_DATA_KEY] as? HashMap<String, Any?> ?: return false
+
+        try {
+            val name = callData[NATIVE_METHOD_NAME_KEY] as? String
+                ?: throw Error("Invalid native bridge call data")
+            val args = callData[NATIVE_METHOD_ARGS_KEY] as? List<Any?>
+                ?: throw Error("Invalid native bridge args (expected List)")
+
+            val asyncHandler = asyncMethods[name]
+            if (asyncHandler != null) {
+                dispatchScope.launch {
+                    val response = try {
+                        mapOf("result" to asyncHandler(args).toNativeObject())
+                    } catch (e: Throwable) {
+                        mapOf("error" to e.stackTraceToString())
+                    }
+                    try {
+                        complete(response)
+                    } catch (e: Throwable) {
+                        log.e("Failed to deliver async bridge result for $name", e)
+                    }
+                }
+            } else {
+                val handler = methods[name] ?: throw Error("Native bridge method not registered: $name")
+                complete(mapOf("result" to handler(args).toNativeObject()))
+            }
+        } catch (e: Throwable) {
+            complete(mapOf("error" to e.stackTraceToString()))
+        }
+        return true
     }
 
     /**
@@ -156,9 +219,11 @@ val revengeBridgeSupport by tweak {
         .hook {
             before {
                 val callData = args[0] ?: return@before
-                val response = RevengeBridgeRegistry.tryDispatchNative(callData) ?: return@before
-                promiseResolve.invoke(args[1]!!, makeNativeObject.invoke(null, response as Any))
-                result = null
+                val promiseObj = args[1]!!
+                val handled = RevengeBridgeRegistry.tryDispatchNativeAsync(callData) { response ->
+                    promiseResolve.invoke(promiseObj, makeNativeObject.invoke(null, response as Any))
+                }
+                if (handled) result = null
             }
         }
 

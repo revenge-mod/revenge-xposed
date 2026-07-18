@@ -14,7 +14,7 @@ import java.io.File
  *
  * 1. Awaits the bundle download from [revengeUpdater].
  * 2. Runs every file under `files/pyoncord/preloads/`.
- * 3. Loads `cache/pyoncord/bundle.js` (downloaded copy) if present.
+ * 3. Loads `cache/revenge/bundle.js` (downloaded copy) if present.
  * 4. Falls back to the in-APK `assets://revenge.bundle` asset shipped with this module.
  */
 val revengeScriptLoader by tweak {

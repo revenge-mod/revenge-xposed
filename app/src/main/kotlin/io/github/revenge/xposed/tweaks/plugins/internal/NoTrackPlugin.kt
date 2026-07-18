@@ -1,6 +1,7 @@
 package io.github.revenge.xposed.tweaks.plugins.internal
 
 import android.content.Context
+import io.github.revenge.plugins.API_VERSION
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.hook
 import io.github.revenge.xposed.loadClassOrNull
@@ -13,6 +14,7 @@ private val manifest = PluginManifest(
     description = "Disables Discord and Sentry analytics, and other tracking.",
     author = "Revenge",
     icon = "AnalyticsIcon",
+    version = API_VERSION,
 )
 
 internal val noTrackPlugin =

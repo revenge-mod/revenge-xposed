@@ -12,6 +12,7 @@ import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedHelpers
 import io.github.revenge.Logger
 import io.github.revenge.xposed.*
+import io.github.revenge.xposed.tweaks.httpClient
 import io.github.revenge.xposed.tweaks.legacy.RevengePayloadBuilder
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -98,9 +99,7 @@ val fonts by tweak {
                         val ext = FontsState.FILE_EXTENSIONS.firstOrNull { url.endsWith(it) } ?: ".ttf"
                         val file = File(setDir, "$name$ext").apply { ensureFile() }
                         if (file.exists()) return@async
-                        HttpClient(CIO) {
-                            install(UserAgent) { agent = RevengeConstants.USER_AGENT }
-                        }.use { client ->
+                        httpClient.use { client ->
                             val response: HttpResponse = client.get(url)
                             if (response.status == HttpStatusCode.OK) {
                                 file.writeBytes(response.body())

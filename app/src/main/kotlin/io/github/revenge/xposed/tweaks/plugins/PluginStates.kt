@@ -27,6 +27,7 @@ enum class InternalPluginFlags {
     INTERNAL,
     ESSENTIAL,
     ENABLED_BY_DEFAULT,
+    API,
 }
 
 /**

@@ -19,7 +19,7 @@ android {
 
     sourceSets {
         named("main") {
-            kotlin.srcDirs("src/main/kotlin")
+            kotlin.directories += "src/main/kotlin"
         }
     }
 

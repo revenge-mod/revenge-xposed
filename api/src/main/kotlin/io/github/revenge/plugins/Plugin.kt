@@ -23,53 +23,49 @@ data class PluginManifest(
     val description: String,
     val author: String,
     val icon: String? = null,
-    val dependencies: ArrayList<PluginDependency> = arrayListOf(),
+    /** Dependencies keyed by plugin ID. */
+    val dependencies: Map<String, PluginDependency> = emptyMap(),
+    val version: Version,
 )
 
 /**
- * JS plugin dependency.
- *
- * Native plugin dependencies can link against other plugins during compile-time instead.
+ * A plugin dependency specification.
+ * The dependency's plugin ID is the key in [PluginManifest.dependencies].
  */
 data class PluginDependency(
-    val id: String,
     /**
-     * Optional suggested URL for the dependency.
+     * Version range the dependency must satisfy.
+     * 
+     * Defaults to [VersionRange.ANY] (any version satisfies the dependency).
      */
-    val url: String? = null,
+    val version: VersionRange = VersionRange.ANY,
+    /**
+     * When `true`, this dependency never blocks the dependent when missing, version-unsatisfied, or failed to load.
+     *
+     * When available, the dependency is ordered first and its class loader is chained,
+     * so availability is detectable via `Class.forName(name, false, javaClass.classLoader)`.
+     */
+    val optional: Boolean = false,
 )
-
-/**
- * Minimal [semantic version](https://semver.org) (`major.minor.patch`), comparable by precedence.
- */
-data class SemVer(
-    val major: Int,
-    val minor: Int,
-    val patch: Int,
-) : Comparable<SemVer> {
-    override fun compareTo(other: SemVer): Int {
-        if (major != other.major) return major.compareTo(other.major)
-        if (minor != other.minor) return minor.compareTo(other.minor)
-        return patch.compareTo(other.patch)
-    }
-
-    override fun toString(): String = "$major.$minor.$patch"
-
-    companion object {
-        /** Parse `"X.Y.Z"` (missing parts default to `0`); pre-release/build suffixes are dropped. */
-        fun parse(value: String): SemVer {
-            val core = value.trim().substringBefore('-').substringBefore('+')
-            val parts = core.split('.')
-            fun part(index: Int) = parts.getOrNull(index)?.toIntOrNull() ?: 0
-            return SemVer(part(0), part(1), part(2))
-        }
-    }
-}
 
 /**
  * The current Revenge plugin API version.
- *
- * An external plugin records the API version it was linked against in its manifest (`api_version`).
- * The loader compares that against this value to decide whether the plugin is compatible.
  */
-val API_VERSION: SemVer = SemVer.parse(BuildConfig.API_VERSION)
+val API_VERSION: Version = Version.parse(BuildConfig.API_VERSION)
+
+/**
+ * The reserved dependency ID resolving to the [API_VERSION].
+ *
+ * External plugins **MUST** declare a dependency on this ID. Plugins that don't won't be loaded.
+ */
+const val API_DEPENDENCY_ID: String = "revenge.api"
+
+/**
+ * The reserved dependency ID resolving to the host Discord app's version.
+ *
+ * The version is determined at runtime based on the app the module is loaded into,
+ * so it lives in the loader, not here. This library only defines the contract.
+ *
+ * External plugins **MUST** declare a dependency on this ID. Plugins that don't won't be loaded.
+ */
+const val DISCORD_DEPENDENCY_ID: String = "discord"

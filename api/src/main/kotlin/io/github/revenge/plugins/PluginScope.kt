@@ -15,7 +15,7 @@ interface PluginScope : HostScope {
      * This plugin's data directory (`files/revenge/plugins/storage/<id>/`), created on first access.
      *
      * Preserved across plugin updates and deleted on uninstall. Shared with the plugin's JS side
-     * (the `jsonStorage` API stores its documents here — the file name `storage.json` is reserved
+     * (the `jsonStorage` API stores its documents here, the file name `storage.json` is reserved
      * as its default document). Store whatever you want in it, in whatever format fits.
      */
     val storageDir: File

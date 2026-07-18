@@ -22,6 +22,16 @@ interface RevengeBridge {
     fun registerMethod(name: String, handler: (args: List<Any?>) -> Any?)
 
     /**
+     * Register a **suspending** native method callable from JS.
+     *
+     * Only callable through the async (promise-based) bridge path.
+     * The handler is dispatched off the React native-modules thread, as to not block the bridge.
+     *
+     * Semantics and argument/return conversion match [registerMethod].
+     */
+    fun registerAsyncMethod(name: String, handler: suspend (args: List<Any?>) -> Any?)
+
+    /**
      * Invoke a JS method on the `RevengeBridge` callable module and await JS's `revenge.__callableReturn` reply.
      *
      * Throws if JS responds with `{ error: ... }`. May suspend indefinitely if JS never replies.

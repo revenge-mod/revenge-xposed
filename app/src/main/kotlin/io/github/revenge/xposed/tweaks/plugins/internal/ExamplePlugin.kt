@@ -1,5 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins.internal
 
+import io.github.revenge.plugins.API_VERSION
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.api.registerNativeMethod
 import io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags
@@ -9,6 +10,7 @@ private val manifest = PluginManifest(
     name = "Example Plugin",
     description = "Example plugin.",
     author = "Revenge",
+    version = API_VERSION,
 )
 
 internal val examplePlugin =

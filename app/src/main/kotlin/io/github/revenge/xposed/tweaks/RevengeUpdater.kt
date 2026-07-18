@@ -88,39 +88,24 @@ object RevengeUpdater {
             val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
             log.i("Fetching JS bundle from: $url")
 
-            HttpClient(CIO) {
-                expectSuccess = false
-                install(UserAgent) { agent = RevengeConstants.USER_AGENT }
-                install(HttpRedirect) {}
-                install(HttpTimeout) {}
-            }.use { client ->
-                val response = client.get(url) {
-                    if (etag.exists() && bundle.exists()) {
-                        headers.append(HttpHeaders.IfNoneMatch, etag.readText())
-                    }
-                    if (!userInitiated) timeout {
-                        requestTimeoutMillis = if (bundle.exists()) TIMEOUT_CACHED else TIMEOUT
-                    }
+            val result = httpClient.getWithETag(
+                url = url,
+                etag = if (etag.exists() && bundle.exists()) etag.readText() else null,
+                timeoutMillis = if (userInitiated) null
+                else if (bundle.exists()) TIMEOUT_CACHED else TIMEOUT,
+            )
+
+            when (result) {
+                is ETagFetchResult.Fetched -> {
+                    AtomicFile(bundle).writeBytes(result.bytes)
+
+                    result.etag?.let(etag::writeText) ?: etag.delete()
+
+                    log.i("Bundle updated (${result.bytes.size} bytes)")
+                    if (userInitiated) showSuccessDialog()
                 }
 
-                when (response.status) {
-                    HttpStatusCode.OK -> {
-                        val bytes: ByteArray = response.body()
-                        AtomicFile(bundle).writeBytes(bytes)
-
-                        response.headers[HttpHeaders.ETag]
-                            ?.takeIf { it.isNotEmpty() }
-                            ?.let(etag::writeText)
-                            ?: etag.delete()
-
-                        log.i("Bundle updated (${bytes.size} bytes)")
-                        if (userInitiated) showSuccessDialog()
-                    }
-
-                    HttpStatusCode.NotModified -> log.i("Server responded with 304, no changes")
-
-                    else -> throw ResponseException(response, "Received status: ${response.status}")
-                }
+                ETagFetchResult.NotModified -> log.i("Server responded with 304, no changes")
             }
         } catch (e: Throwable) {
             log.e("Failed to download script", e)

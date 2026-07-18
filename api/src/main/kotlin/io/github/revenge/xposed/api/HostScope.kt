@@ -49,6 +49,22 @@ fun HostScope.registerNativeMethod(
     handler: (args: List<Any?>) -> Any?,
 ) = bridge.registerMethod(name, handler)
 
+/**
+ * Shorthand for [bridge].`registerAsyncMethod`.
+ *
+ * The suspending counterpart of [registerNativeMethod].
+ * The handler runs off the React native-modules thread (JS awaits a promise),
+ * so it may freely do disk/network work and call suspending APIs such as [callJSMethod].
+ *
+ * ```kotlin
+ * registerNativeAsyncMethod("my.method") { args -> mapOf("echo" to args) }
+ * ```
+ */
+fun HostScope.registerNativeAsyncMethod(
+    name: String,
+    handler: suspend (args: List<Any?>) -> Any?,
+) = bridge.registerAsyncMethod(name, handler)
+
 /** Shorthand for [bridge].`callJSMethod`. */
 suspend fun HostScope.callJSMethod(name: String, args: List<Any?> = emptyList()): Any? =
     bridge.callJSMethod(name, args)

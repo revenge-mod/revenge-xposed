@@ -44,6 +44,11 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    testOptions {
+        // Logger wraps android.util.Log; return default values so unit tests can run.
+        unitTests.isReturnDefaultValues = true
+    }
 }
 
 dependencies {
@@ -56,4 +61,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
+
+    testImplementation(libs.kotlin.test)
 }
