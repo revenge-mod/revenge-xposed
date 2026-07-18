@@ -12,12 +12,8 @@ import de.robv.android.xposed.XC_MethodReplacement
 import de.robv.android.xposed.XposedHelpers
 import io.github.revenge.Logger
 import io.github.revenge.xposed.*
-import io.github.revenge.xposed.tweaks.httpClient
 import io.github.revenge.xposed.tweaks.legacy.RevengePayloadBuilder
-import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*

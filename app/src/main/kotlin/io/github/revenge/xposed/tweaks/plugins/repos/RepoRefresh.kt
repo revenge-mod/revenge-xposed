@@ -2,9 +2,9 @@ package io.github.revenge.xposed.tweaks.plugins.repos
 
 import android.util.AtomicFile
 import androidx.core.util.writeBytes
-import io.github.revenge.xposed.tweaks.ETagFetchResult
-import io.github.revenge.xposed.tweaks.getWithETag
-import io.github.revenge.xposed.tweaks.httpClient
+import io.github.revenge.xposed.ETagFetchResult
+import io.github.revenge.xposed.getWithETag
+import io.github.revenge.xposed.httpClient
 
 private const val REFRESH_TIMEOUT = 10_000L
 

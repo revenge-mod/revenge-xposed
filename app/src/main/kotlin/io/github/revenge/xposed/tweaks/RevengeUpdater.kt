@@ -6,16 +6,8 @@ import android.widget.Toast
 import androidx.core.util.writeBytes
 import io.github.revenge.logger
 import io.github.revenge.reloadApp
-import io.github.revenge.xposed.RevengeConstants
-import io.github.revenge.xposed.RevengeJson
-import io.github.revenge.xposed.tweak
+import io.github.revenge.xposed.*
 import io.github.revenge.xposed.tweaks.base.withAppActivity
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.*
-import io.ktor.client.request.*
-import io.ktor.http.*
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import java.io.File

@@ -2,7 +2,7 @@ package io.github.revenge.xposed.tweaks.plugins.repos
 
 import io.github.revenge.Logger
 import io.github.revenge.plugins.Version
-import io.github.revenge.xposed.tweaks.httpClient
+import io.github.revenge.xposed.httpClient
 import io.github.revenge.xposed.tweaks.plugins.*
 import io.ktor.client.*
 import io.ktor.client.call.*
