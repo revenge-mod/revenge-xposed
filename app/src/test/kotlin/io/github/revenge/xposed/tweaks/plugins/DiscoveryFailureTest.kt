@@ -116,6 +116,41 @@ class DiscoveryFailureTest {
 
         assertEquals(listOf("com.example.tolerant"), discovery.factories.map { it.manifest.id })
         assertTrue(discovery.failures.isEmpty())
+        assertTrue(discovery.factories.single().unsatisfiedOptionalDependencies.isEmpty())
+    }
+
+    @Test
+    fun `present-but-unsatisfied optional dependency is reported`() {
+        writePlugin("com.example.dep", version = "1.0.0")
+        writePlugin(
+            "com.example.tolerant",
+            dependencies = "\"com.example.dep\": { \"version\": \">=2\", \"optional\": true }",
+        )
+
+        val discovery = discover()
+
+        assertEquals(
+            setOf("com.example.dep", "com.example.tolerant"),
+            discovery.factories.map { it.manifest.id }.toSet(),
+        )
+        assertTrue(discovery.failures.isEmpty())
+        val tolerant = discovery.factories.single { it.manifest.id == "com.example.tolerant" }
+        assertEquals(setOf("com.example.dep"), tolerant.unsatisfiedOptionalDependencies)
+    }
+
+    @Test
+    fun `satisfied optional dependency is not reported`() {
+        writePlugin("com.example.dep", version = "2.0.0")
+        writePlugin(
+            "com.example.tolerant",
+            dependencies = "\"com.example.dep\": { \"version\": \">=2\", \"optional\": true }",
+        )
+
+        val discovery = discover()
+
+        assertTrue(discovery.failures.isEmpty())
+        val tolerant = discovery.factories.single { it.manifest.id == "com.example.tolerant" }
+        assertTrue(tolerant.unsatisfiedOptionalDependencies.isEmpty())
     }
 
     @Test

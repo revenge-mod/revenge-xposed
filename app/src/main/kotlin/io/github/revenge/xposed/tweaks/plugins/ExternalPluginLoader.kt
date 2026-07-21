@@ -132,6 +132,11 @@ internal class ParsedExternalPlugin(val dir: File, val manifest: ExternalManifes
      * Dependency IDs deemed available for this plugin. Unsatisfied dependencies will be removed later.
      */
     var availableDeps: Set<String> = manifest.dependencies.keys
+
+    /**
+     * Optional dependencies that are installed but unsatisified, so this plugin loaded without linking them.
+     */
+    val unsatisfiedOptionalDeps = mutableSetOf<String>()
 }
 
 internal class DiscoveryFailure(
@@ -294,7 +299,10 @@ private fun orderByDependencies(
                 if (dep.optional) {
                     if (depId in plugin.availableDeps) {
                         plugin.availableDeps -= depId
-                        if (version != null) log.w("Optional ${problem.reason} for plugin '$id'; ignoring")
+                        if (version != null) {
+                            plugin.unsatisfiedOptionalDeps += depId
+                            log.w("Optional ${problem.reason} for plugin '$id'; ignoring")
+                        }
                     }
                     continue
                 }
@@ -372,6 +380,7 @@ internal fun readExternalPluginDir(dir: File, knownVersions: Map<String, Version
 
         if (dep.optional) {
             parsed.availableDeps -= depId
+            if (knownVersions[depId] != null) parsed.unsatisfiedOptionalDeps += depId
             log.w("Optional ${problem.reason} for plugin '${parsed.manifest.id}'; ignoring")
         } else {
             throw PluginException(problem.code, "Plugin '${parsed.manifest.id}': ${problem.reason}")
@@ -412,7 +421,12 @@ private fun buildExternalFactory(parsed: ParsedExternalPlugin, log: Logger): Plu
 
     log.i("Loaded external plugin: ${pluginManifest.id} ${pluginManifest.version}")
 
-    return PluginFactory(builder, pluginManifest, scriptPath = scriptPath)
+    return PluginFactory(
+        builder,
+        pluginManifest,
+        scriptPath = scriptPath,
+        unsatisfiedOptionalDependencies = parsed.unsatisfiedOptionalDeps.toSet(),
+    )
 }
 
 /** Class loaders of already-loaded native external plugins, keyed by plugin id, for dependency linking. */

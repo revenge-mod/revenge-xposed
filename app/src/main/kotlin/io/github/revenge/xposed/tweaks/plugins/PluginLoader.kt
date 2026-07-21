@@ -704,6 +704,10 @@ internal class PluginFactory(
     val internalFlags: Set<InternalPluginFlags> = emptySet(),
     /** Absolute path to the plugin's `dist.script` JS bundle. Its source is handed to JS via `getPlugins`. */
     val scriptPath: String? = null,
+    /**
+     * Optional dependencies that are installed but unsatisfied, so this plugin loaded without linking them.
+     */
+    val unsatisfiedOptionalDependencies: Set<String> = emptySet(),
 )
 
 /** A started plugin together with its scope, so it can be stopped/restarted later. */
@@ -769,6 +773,7 @@ private fun PluginFactory.toJSPayload(
     "enabledByDefault" to (InternalPluginFlags.ENABLED_BY_DEFAULT in internalFlags),
     "api" to (InternalPluginFlags.API in internalFlags),
     "source" to source?.toJSPayload(),
+    "unsatisfiedOptionalDependencies" to unsatisfiedOptionalDependencies.toList(),
     // Errors the native side has already hit (e.g. at boot, before JS was up).
     "errors" to buildList {
         bootError?.let { add(it.toJSPayload()) }
@@ -798,6 +803,7 @@ private fun DiscoveryFailure.toJSPayload(manifest: PluginManifest, source: Plugi
         "api" to false,
         "failed" to true,
         "source" to source?.toJSPayload(),
+        "unsatisfiedOptionalDependencies" to emptyList<String>(),
         "errors" to listOf(PluginErrorInfo(code, reason).toJSPayload()),
     )
 
