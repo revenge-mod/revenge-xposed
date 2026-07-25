@@ -31,7 +31,7 @@ val additionalBridgeMethods by tweak {
                     .setMessage(
                         """
                     Revenge: $version
-                    ${act.applicationInfo.name}: ${act.versionName()} (${act.versionCode()})
+                    Discord: ${act.versionName()} (${act.versionCode()})
                     Device: ${Build.MANUFACTURER} ${Build.MODEL}
                     
                     
