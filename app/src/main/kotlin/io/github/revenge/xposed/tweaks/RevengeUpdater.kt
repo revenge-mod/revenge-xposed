@@ -11,6 +11,7 @@ import io.github.revenge.xposed.tweaks.base.withAppActivity
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import java.io.File
+import kotlin.time.Duration.Companion.seconds
 
 @Serializable
 data class CustomLoadUrl(
@@ -30,8 +31,8 @@ data class LoaderConfig(
  * The actual loading of the bundle is handled by [revengeScriptLoader].
  */
 object RevengeUpdater {
-    private const val TIMEOUT_CACHED = 5000L
-    private const val TIMEOUT = 10000L
+    internal val TIMEOUT = 10.seconds
+    private val TIMEOUT_CACHED = 5.seconds
     private const val ETAG_PATH = "etag.txt"
     private const val CONFIG_PATH = "loader.json"
     private const val DEFAULT_BUNDLE_URL = "https://copyparty.palmdevs.me/revenge.bundle"
@@ -84,7 +85,7 @@ object RevengeUpdater {
                 url = url,
                 etag = if (etag.exists() && bundle.exists()) etag.readText() else null,
                 timeoutMillis = if (userInitiated) null
-                else if (bundle.exists()) TIMEOUT_CACHED else TIMEOUT,
+                else if (bundle.exists()) TIMEOUT_CACHED.inWholeMilliseconds else TIMEOUT.inWholeMilliseconds,
             )
 
             when (result) {

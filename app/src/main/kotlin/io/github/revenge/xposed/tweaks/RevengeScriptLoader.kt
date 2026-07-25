@@ -7,6 +7,7 @@ import io.github.revenge.xposed.tweak
 import io.github.revenge.xposed.tweaks.base.InjectorScope
 import io.github.revenge.xposed.tweaks.base.registerScriptInjector
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import java.io.File
 
 /**
@@ -35,7 +36,7 @@ private fun runRevengeScripts(scope: InjectorScope, preloadsDir: File, mainScrip
 
     runBlocking {
         try {
-            RevengeUpdater.downloadReady.await()
+            withTimeout(RevengeUpdater.TIMEOUT) { RevengeUpdater.downloadReady.await() }
         } catch (e: Throwable) {
             log.w("Bundle download did not complete", e)
         }
