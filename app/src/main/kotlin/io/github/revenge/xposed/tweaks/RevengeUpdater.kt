@@ -77,7 +77,7 @@ object RevengeUpdater {
      * Trigger a download. If [userInitiated] is true (retry from the error dialog), the timeout
      * is disabled and a success dialog is shown on the next available activity.
      */
-    fun downloadScript(userInitiated: Boolean = false): Job = scope.launch {
+    fun downloadScript(userInitiated: Boolean = false, showDialog: Boolean = true): Job = scope.launch {
         try {
             val url = config.customLoadUrl.takeIf { it.enabled }?.url ?: DEFAULT_BUNDLE_URL
             log.i("Fetching JS bundle from: $url")
@@ -96,7 +96,9 @@ object RevengeUpdater {
                     result.etag?.let(etag::writeText) ?: etag.delete()
 
                     log.i("Bundle updated (${result.bytes.size} bytes)")
-                    if (userInitiated) showSuccessDialog() else showUpdateDialog()
+                    if (showDialog) {
+                        if (userInitiated) showSuccessDialog() else showUpdateDialog()
+                    }
                 }
 
                 ETagFetchResult.NotModified -> log.i("Server responded with 304, no changes")
@@ -126,7 +128,7 @@ object RevengeUpdater {
                 .setTitle("Revenge Update Successful")
                 .setMessage("A reload is required for changes to take effect.")
                 .setPositiveButton("Reload") { d, _ -> reloadApp(); d.dismiss() }
-                .setCancelable(false)
+                .setNegativeButton("Later") { d, _ -> d.dismiss() }
                 .show()
         }
     }
@@ -162,6 +164,6 @@ object RevengeUpdater {
 val revengeUpdater by tweak {
     withAppContext { ctx ->
         RevengeUpdater.init(ctx.dataDir.absolutePath)
-        RevengeUpdater.downloadScript()
+        RevengeUpdater.downloadScript(userInitiated = false, showDialog = false)
     }
 }
