@@ -134,28 +134,35 @@ internal class ParsedExternalPlugin(val dir: File, val manifest: ExternalManifes
     var availableDeps: Set<String> = manifest.dependencies.keys
 
     /**
-     * Optional dependencies that are installed but unsatisified, so this plugin loaded without linking them.
+     * Optional dependencies that are installed but unsatisfied, so this plugin loaded without linking them.
      */
     val unsatisfiedOptionalDeps = mutableSetOf<String>()
 }
 
 internal class DiscoveryFailure(
     val manifest: PluginManifest?,
-    /** A [PluginErrorCodes] value. */
-    val code: String,
-    val reason: String,
-)
+    /** Everything wrong with the plugin, eg. one entry per unsatisfied/failed dependency. Never empty. */
+    val errors: List<PluginErrorInfo>,
+) {
+    /**
+     * True when the failure is the plugin's own fault (bad code, bad manifest) rather than an environmental one (dependencies).
+     * Own-fault plugins get disabled instead of session-skipped, matching JS disabling a plugin whose script throws at evaluation.
+     */
+    val isPluginFault: Boolean
+        get() = errors.any {
+            it.code == PluginErrorCodes.LOAD_FAILED || it.code == PluginErrorCodes.MANIFEST_INVALID
+        }
+}
 
 /** Record a session-skip [DiscoveryFailure] for [id] and log it. */
 private fun MutableMap<String, DiscoveryFailure>.sessionSkip(
     id: String,
     manifest: PluginManifest?,
-    code: String,
-    reason: String,
+    errors: List<PluginErrorInfo>,
     log: Logger,
 ) {
-    this[id] = DiscoveryFailure(manifest, code, reason)
-    log.e("Skipping external plugin '$id': $reason")
+    this[id] = DiscoveryFailure(manifest, errors)
+    log.e("Skipping external plugin '$id': ${errors.joinToString("; ") { it.message }}")
 }
 
 internal class ExternalDiscovery(
@@ -206,8 +213,12 @@ internal fun discoverExternalPlugins(
         } catch (e: Throwable) {
             failures[dir.name] = DiscoveryFailure(
                 null,
-                PluginErrorCodes.MANIFEST_INVALID,
-                "Failed to read plugin manifest: ${e.message}",
+                listOf(
+                    PluginErrorInfo(
+                        PluginErrorCodes.MANIFEST_INVALID,
+                        "Failed to read plugin manifest: ${e.message}",
+                    ),
+                ),
             )
             log.e("Failed to read external plugin in '${dir.name}'", e)
         }
@@ -224,13 +235,18 @@ internal fun discoverExternalPlugins(
             depId in failed && plugin.manifest.dependencies[depId]?.optional == true
         }.toSet()
 
-        val failedDep = plugin.manifest.dependencies.entries
-            .firstOrNull { (depId, dep) -> !dep.optional && depId in failed }?.key
-        if (failedDep != null) {
+        // Every failed required dep gets its own error, not just the first one found.
+        val failedDeps = plugin.manifest.dependencies
+            .filter { (depId, dep) -> !dep.optional && depId in failed }
+            .keys
+        if (failedDeps.isNotEmpty()) {
             failed += id
             failures.sessionSkip(
                 id, plugin.manifest.toPluginManifest(),
-                PluginErrorCodes.DEPENDENCY_FAILED, "Dependency '$failedDep' failed to load", log,
+                failedDeps.map {
+                    PluginErrorInfo(PluginErrorCodes.DEPENDENCY_FAILED, "Dependency '$it' failed to load")
+                },
+                log,
             )
             continue
         }
@@ -241,8 +257,7 @@ internal fun discoverExternalPlugins(
             failed += id
             failures[id] = DiscoveryFailure(
                 runCatching { plugin.manifest.toPluginManifest() }.getOrNull(),
-                PluginErrorCodes.LOAD_FAILED,
-                "Failed to load: ${e.message}",
+                listOf(PluginErrorInfo(PluginErrorCodes.LOAD_FAILED, "Failed to load: ${e.message}")),
             )
             log.e("Failed to load external plugin '$id'", e)
         }
@@ -292,6 +307,9 @@ private fun orderByDependencies(
         changed = false
         for ((id, plugin) in parsed) {
             if (id in dropped) continue
+            // Collect every unsatisfied required dep instead of stopping at the first one,
+            // so the user sees the full list at once.
+            val problems = mutableListOf<PluginErrorInfo>()
             for ((depId, dep) in plugin.manifest.dependencies) {
                 val version = if (depId in dropped) null else known[depId]
                 val problem = unsatisfiedDependencyReason(depId, dep, version) ?: continue
@@ -307,13 +325,13 @@ private fun orderByDependencies(
                     continue
                 }
 
+                problems += PluginErrorInfo(problem.code, "Unsatisfied dependency: ${problem.reason}")
+            }
+
+            if (problems.isNotEmpty()) {
                 dropped += id
                 changed = true
-                failures.sessionSkip(
-                    id, plugin.manifest.toPluginManifest(),
-                    problem.code, "Unsatisfied dependency: ${problem.reason}", log,
-                )
-                break
+                failures.sessionSkip(id, plugin.manifest.toPluginManifest(), problems, log)
             }
         }
     }
@@ -331,7 +349,8 @@ private fun orderByDependencies(
             for (id in remaining.keys) {
                 failures.sessionSkip(
                     id, remaining[id]?.manifest?.toPluginManifest(),
-                    PluginErrorCodes.DEPENDENCY_CYCLE, "Dependency cycle", log,
+                    listOf(PluginErrorInfo(PluginErrorCodes.DEPENDENCY_CYCLE, "Dependency cycle")),
+                    log,
                 )
             }
             break

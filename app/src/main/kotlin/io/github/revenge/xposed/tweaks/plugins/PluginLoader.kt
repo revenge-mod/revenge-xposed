@@ -93,9 +93,12 @@ val pluginLoader by tweak {
     )
     val external = discovery.factories
 
-    // Discovery errors aren't hard errors (unsatisfied deps, bad artifacts), but won't allow the plugins to
-    // run in this session. They can run once the issues are resolved (e.g. loader/plugin/Discord update).
     registry.discoveryFailures.putAll(discovery.failures)
+
+    // Some discovery errors aren't hard errors (unsatisfied deps), but won't allow the plugins to run in this session.
+    // They can run once the issues are resolved (e.g. loader/plugin/Discord update).
+    for ((id, failure) in discovery.failures)
+        if (failure.isPluginFault) clearPersistedState(id)
     for (factory in internalPlugins + external) registry.add(factory)
 
     registerNativeMethod("revenge.plugins.getConstants") {
@@ -290,7 +293,10 @@ val pluginLoader by tweak {
                 appInfo.dataDir,
                 registry.installedVersions(),
                 isUpdate = { it in registry.factories },
-                isPendingReload = { it in registry.pendingUpdates },
+                isPendingReload = { id ->
+                    registry.loaded[id]?.let { PluginFlags.PENDING_RELOAD in it.scope.flags.value } ?: false
+                            || id in registry.pendingUpdates
+                },
                 log,
                 onProgress = { p ->
                     emitPluginEvent(
@@ -714,7 +720,7 @@ internal class PluginFactory(
 private class LoadedPlugin(
     val plugin: Plugin,
     val scope: PluginScopeImpl,
-    /** Collector persisting flag changes + broadcasting them to JS. Canceled on stop/uninstall/replace. */
+    /** Collector persisting flag changes + broadcasting them to JS. Canceled on stop. */
     val persistJob: Job,
     /** Collector syncing native errors + broadcasting them to JS. Canceled on stop. */
     val errorSyncJob: Job,
@@ -804,7 +810,7 @@ private fun DiscoveryFailure.toJSPayload(manifest: PluginManifest, source: Plugi
         "failed" to true,
         "source" to source?.toJSPayload(),
         "unsatisfiedOptionalDependencies" to emptyList<String>(),
-        "errors" to listOf(PluginErrorInfo(code, reason).toJSPayload()),
+        "errors" to errors.map { it.toJSPayload() },
     )
 
 /** Read the plugin's `dist.script` source (if any) for JS to evaluate. */

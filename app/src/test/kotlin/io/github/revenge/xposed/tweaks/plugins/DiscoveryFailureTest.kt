@@ -75,8 +75,51 @@ class DiscoveryFailureTest {
         assertNotNull(failure)
         assertNotNull(failure.manifest)
         assertEquals("com.example.broken", failure.manifest?.id)
-        assertEquals(PluginErrorCodes.DEPENDENCY_MISSING, failure.code)
-        assertTrue("missing dependency 'com.example.gone'" in failure.reason)
+        val error = failure.errors.single()
+        assertEquals(PluginErrorCodes.DEPENDENCY_MISSING, error.code)
+        assertTrue("missing dependency 'com.example.gone'" in error.message)
+        // Environmental failure: keeps the enabled flag, session-skip only.
+        assertTrue(!failure.isPluginFault)
+    }
+
+    @Test
+    fun `every unsatisfied required dependency is reported, not just the first`() {
+        writePlugin("com.example.old", version = "1.0.0")
+        writePlugin(
+            "com.example.broken",
+            dependencies = "\"com.example.gone\": {}, \"com.example.old\": { \"version\": \">=2\" }",
+        )
+
+        val discovery = discover()
+
+        val failure = discovery.failures["com.example.broken"]
+        assertNotNull(failure)
+        assertEquals(2, failure.errors.size)
+        assertEquals(
+            setOf(PluginErrorCodes.DEPENDENCY_MISSING, PluginErrorCodes.DEPENDENCY_UNSATISFIED),
+            failure.errors.map { it.code }.toSet(),
+        )
+        assertTrue(failure.errors.any { "com.example.gone" in it.message })
+        assertTrue(failure.errors.any { "com.example.old" in it.message })
+    }
+
+    @Test
+    fun `every failed required dependency is reported to the dependent`() {
+        writePlugin("com.example.bad1", dependencies = "\"com.example.gone\": {}")
+        writePlugin("com.example.bad2", dependencies = "\"com.example.gone\": {}")
+        writePlugin(
+            "com.example.top",
+            dependencies = "\"com.example.bad1\": {}, \"com.example.bad2\": {}",
+        )
+
+        val discovery = discover()
+
+        val top = discovery.failures["com.example.top"]
+        assertNotNull(top)
+        assertEquals(2, top.errors.size)
+        assertTrue(top.errors.all { it.code == PluginErrorCodes.DEPENDENCY_MISSING })
+        assertTrue(top.errors.any { "com.example.bad1" in it.message })
+        assertTrue(top.errors.any { "com.example.bad2" in it.message })
     }
 
     @Test
@@ -89,8 +132,9 @@ class DiscoveryFailureTest {
         assertEquals(listOf("com.example.dep"), discovery.factories.map { it.manifest.id })
         val failure = discovery.failures["com.example.needy"]
         assertNotNull(failure)
-        assertEquals(PluginErrorCodes.DEPENDENCY_UNSATISFIED, failure.code)
-        assertTrue("does not satisfy" in failure.reason)
+        val error = failure.errors.single()
+        assertEquals(PluginErrorCodes.DEPENDENCY_UNSATISFIED, error.code)
+        assertTrue("does not satisfy" in error.message)
     }
 
     @Test
@@ -104,8 +148,9 @@ class DiscoveryFailureTest {
         assertNotNull(discovery.failures["com.example.mid"])
         val top = discovery.failures["com.example.top"]
         assertNotNull(top)
-        assertEquals(PluginErrorCodes.DEPENDENCY_MISSING, top.code)
-        assertTrue("com.example.mid" in top.reason)
+        val error = top.errors.single()
+        assertEquals(PluginErrorCodes.DEPENDENCY_MISSING, error.code)
+        assertTrue("com.example.mid" in error.message)
     }
 
     @Test
@@ -161,9 +206,12 @@ class DiscoveryFailureTest {
         val discovery = discover()
 
         assertTrue(discovery.factories.isEmpty())
-        assertEquals(PluginErrorCodes.DEPENDENCY_CYCLE, discovery.failures["com.example.a"]?.code)
-        assertTrue(discovery.failures["com.example.a"]?.reason?.contains("cycle") == true)
-        assertTrue(discovery.failures["com.example.b"]?.reason?.contains("cycle") == true)
+        assertEquals(
+            PluginErrorCodes.DEPENDENCY_CYCLE,
+            discovery.failures["com.example.a"]?.errors?.single()?.code,
+        )
+        assertTrue(discovery.failures["com.example.a"]?.errors?.single()?.message?.contains("cycle") == true)
+        assertTrue(discovery.failures["com.example.b"]?.errors?.single()?.message?.contains("cycle") == true)
     }
 
     @Test
@@ -175,8 +223,10 @@ class DiscoveryFailureTest {
         assertTrue(discovery.factories.isEmpty())
         val failure = discovery.failures["com.example.junk"]
         assertNotNull(failure)
-        assertEquals(PluginErrorCodes.MANIFEST_INVALID, failure.code)
+        assertEquals(PluginErrorCodes.MANIFEST_INVALID, failure.errors.single().code)
         assertNull(failure.manifest)
+        // Own-fault failure: the boot pass disables the plugin.
+        assertTrue(failure.isPluginFault)
     }
 
     @Test
