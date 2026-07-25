@@ -222,7 +222,7 @@ val pluginLoader by tweak {
     }
 
     /**
-     * `revenge.plugins.planInstall(id, version?, channel?) -> InstallPlan`
+     * `revenge.plugins.planInstall(id, version?, channel?, filteredRepos?) -> InstallPlan`
      *
      * Resolves an install against cached indexes and returns a plan for JS to confirm and pass to `installFromRepo`.
      */
@@ -231,12 +231,20 @@ val pluginLoader by tweak {
         val version = args.getOrNull(1) as? String
         val channel = args.getOrNull(2) as? String ?: REPO_CHANNEL_LATEST
 
+        @Suppress("UNCHECKED_CAST")
+        val filteredRepos = try {
+            args.getOrNull(3) as ArrayList<String>?
+        } catch (_: Throwable) {
+            throw Error("Expected a list of repository URLs or null")
+        }
+
         RepoStore.ensureLoaded(appInfo.dataDir)
         SourcesStore.ensureLoaded(appInfo.dataDir)
 
-        val repos = RepoStore.list().filter { it.enabled }.mapNotNull { repo ->
-            RepoStore.cachedIndex(repo.url)?.let { repo.url to it }
-        }
+        val repos =
+            RepoStore.list().filter { it.enabled && (filteredRepos?.contains(it.url) ?: true) }.mapNotNull { repo ->
+                RepoStore.cachedIndex(repo.url)?.let { repo.url to it }
+            }
         val sources = SourcesStore.all()
 
         val plan = resolveInstall(
