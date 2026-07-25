@@ -35,7 +35,8 @@ object RevengeUpdater {
     private val TIMEOUT_CACHED = 5.seconds
     private const val ETAG_PATH = "etag.txt"
     private const val CONFIG_PATH = "loader.json"
-    private const val DEFAULT_BUNDLE_URL = "https://copyparty.palmdevs.me/revenge.bundle"
+    private const val DEFAULT_BUNDLE_URL =
+        "https://github.com/revenge-mod/revenge-bundle/releases/latest/download/revenge.min.js"
 
     private val log = logger("revengeUpdater")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
