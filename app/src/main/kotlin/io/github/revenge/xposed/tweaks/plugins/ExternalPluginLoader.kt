@@ -706,11 +706,16 @@ internal sealed class InstallResult {
 /** An extracted-and-validated plugin ZIP that hasn't replaced any installation yet. */
 internal class StagedPlugin(val dir: File, val manifest: ExternalManifest)
 
+/** Maximum total decompressed size of a plugin ZIP (1 GiB). */
+private const val MAX_EXTRACTED_ZIP_BYTES: Long = 1L shl 30
+
 /**
  * Extract a plugin ZIP into `<root>/[tmpName]/` and parse + validate its manifest.
  *
  * [input] is one-shot (content resolver / network), so it is spooled to a file first,
  * allowing us to check and validate the manifest before writing a single plugin file.
+ *
+ * Extraction is capped at [MAX_EXTRACTED_ZIP_BYTES] decompressed bytes.
  */
 internal fun extractPluginZip(input: InputStream, root: File, tmpName: String): StagedPlugin {
     val tmp = File(root, tmpName).apply {
@@ -744,6 +749,7 @@ internal fun extractPluginZip(input: InputStream, root: File, tmpName: String): 
                 )
             }
 
+            var budget = MAX_EXTRACTED_ZIP_BYTES
             for (entry in zip.entries()) {
                 val out = File(tmp, entry.name)
                 // Guard against path traversal.
@@ -755,7 +761,16 @@ internal fun extractPluginZip(input: InputStream, root: File, tmpName: String): 
                     out.mkdirs()
                 } else {
                     out.parentFile?.mkdirs()
-                    out.outputStream().use { dest -> zip.getInputStream(entry).use { it.copyTo(dest) } }
+                    out.outputStream().use { dest ->
+                        zip.getInputStream(entry).use { src ->
+                            budget -= src.copyToCapped(dest, budget) {
+                                throw PluginException(
+                                    PluginErrorCodes.INSTALL_INVALID_ZIP,
+                                    "Plugin ZIP expands past the $MAX_EXTRACTED_ZIP_BYTES-byte limit",
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -766,6 +781,26 @@ internal fun extractPluginZip(input: InputStream, root: File, tmpName: String): 
         throw e
     } finally {
         spool.delete()
+    }
+}
+
+/**
+ * Copy at most [budget] bytes to [dest], invoking [onExceeded] the moment the stream would go past it.
+ * Returns the number of bytes copied.
+ */
+private inline fun InputStream.copyToCapped(
+    dest: java.io.OutputStream,
+    budget: Long,
+    onExceeded: () -> Nothing,
+): Long {
+    var copied = 0L
+    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+    while (true) {
+        val read = read(buffer)
+        if (read == -1) return copied
+        if (copied + read > budget) onExceeded()
+        dest.write(buffer, 0, read)
+        copied += read
     }
 }
 
