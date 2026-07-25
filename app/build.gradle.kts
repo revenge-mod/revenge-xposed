@@ -1,19 +1,24 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    kotlin("plugin.serialization") version "2.1.10"
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
     namespace = "io.github.revenge.xposed"
-    compileSdk = 36
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "io.github.revenge.xposed"
-        minSdk = 24
-        targetSdk = 36
-        versionCode = 1410
-        versionName = "1.4.10"
+        minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
+        versionCode = 1500
+        versionName = "1.5.0"
+    }
+
+    sourceSets {
+        named("main") {
+            kotlin.directories += "src/main/kotlin"
+        }
     }
 
     buildTypes {
@@ -26,24 +31,36 @@ android {
             isMinifyEnabled = false
         }
     }
+
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
+        targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
     }
-    kotlinOptions {
-        jvmTarget = "1.8"
+
+    kotlin {
+        jvmToolchain(libs.versions.javaVersion.get().toInt())
     }
+
     buildFeatures {
         buildConfig = true
+    }
+
+    testOptions {
+        // Logger wraps android.util.Log; return default values so unit tests can run.
+        unitTests.isReturnDefaultValues = true
     }
 }
 
 dependencies {
-    compileOnly("de.robv.android.xposed:api:82")
+    compileOnly(libs.xposed.api)
 
-    implementation("androidx.core:core-ktx:1.17.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
-    implementation("io.ktor:ktor-client-core:3.3.1")
-    implementation("io.ktor:ktor-client-cio:3.3.1")
+    implementation(project(":api"))
+
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.ktor.client.core)
+    implementation(libs.ktor.client.cio)
+
+    testImplementation(libs.kotlin.test)
 }
