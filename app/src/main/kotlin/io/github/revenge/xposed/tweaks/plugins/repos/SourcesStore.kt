@@ -74,7 +74,7 @@ internal object SourcesStore {
     }
 
     /**
-     * Removes the provenance and nulls each of every plugin pinned to one of [repoUrls].
+     * Removes provenance and clears the repo field for every plugin pinned to one of [repoUrls].
      */
     @Synchronized
     fun forgetRepos(repoUrls: Collection<String>) {
