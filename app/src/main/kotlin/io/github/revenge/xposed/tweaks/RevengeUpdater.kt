@@ -96,7 +96,7 @@ object RevengeUpdater {
                     result.etag?.let(etag::writeText) ?: etag.delete()
 
                     log.i("Bundle updated (${result.bytes.size} bytes)")
-                    if (userInitiated) showSuccessDialog()
+                    if (userInitiated) showSuccessDialog() else showUpdateDialog()
                 }
 
                 ETagFetchResult.NotModified -> log.i("Server responded with 304, no changes")
@@ -106,6 +106,17 @@ object RevengeUpdater {
             showErrorDialog(e)
         } finally {
             _downloadReady.complete(Unit)
+        }
+    }
+
+    private fun showUpdateDialog() = withAppActivity { activity ->
+        activity.runOnUiThread {
+            AlertDialog.Builder(activity)
+                .setTitle("Revenge Update Downloaded")
+                .setMessage("A reload is required for changes to take effect.")
+                .setPositiveButton("Reload") { d, _ -> reloadApp(); d.dismiss() }
+                .setNegativeButton("Later") { d, _ -> d.dismiss() }
+                .show()
         }
     }
 
