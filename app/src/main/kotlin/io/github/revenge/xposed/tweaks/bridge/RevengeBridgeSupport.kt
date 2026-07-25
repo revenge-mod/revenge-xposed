@@ -12,7 +12,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
-import java.util.concurrent.CopyOnWriteArrayList
 
 typealias MethodCallback = (args: List<Any?>) -> Any?
 typealias AsyncMethodCallback = suspend (args: List<Any?>) -> Any?
@@ -22,7 +21,10 @@ object RevengeBridgeRegistry : RevengeBridge {
 
     private val methods = mutableMapOf<String, MethodCallback>()
     private val asyncMethods = mutableMapOf<String, AsyncMethodCallback>()
-    private val jsCallableReturnQueue = CopyOnWriteArrayList<CompletableDeferred<Any?>>()
+
+    /** Pending [callJSMethod] replies. Positional: guarded by [jsCallableLock]. */
+    private val jsCallableReturnQueue = ArrayDeque<CompletableDeferred<Any?>>()
+    private val jsCallableLock = Any()
 
     /** Executes async method handlers off the React native-modules thread. */
     private val dispatchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -57,16 +59,27 @@ object RevengeBridgeRegistry : RevengeBridge {
     }
 
     override suspend fun callJSMethod(name: String, args: List<Any?>): Any? {
-        val deferred = CompletableDeferred<Any?>()
-        jsCallableReturnQueue += deferred
-
         val callFn = reactInstanceCallFunctionOnModule
             ?: error("Bridge not ready; no captured method ReactInstance.callFunctionOnModule")
         val instance = reactInstance?.get()
             ?: error("Bridge not ready; no captured ReactInstance")
 
-        // Will throw on the CPP thread on error. Uncatchable from here.
-        callFn.invoke(instance, JS_CALLABLE_MODULE_NAME, name, args.toNativeObject())
+        val deferred = CompletableDeferred<Any?>()
+
+        // Enqueue + invoke atomically.
+        // Replies are matched positionally, so the JS-side call order must equal the queue order,
+        // and a failed invoke must not leave an orphan deferred behind (that would cross-complete every later reply).
+        synchronized(jsCallableLock) {
+            jsCallableReturnQueue.addLast(deferred)
+            try {
+                // JS-side errors surface asynchronously on the CPP thread and are uncatchable here.
+                // [args.toNativeObject()] can throw however, so we catch it and remove the deferred.
+                callFn.invoke(instance, JS_CALLABLE_MODULE_NAME, name, args.toNativeObject())
+            } catch (e: Throwable) {
+                jsCallableReturnQueue.remove(deferred)
+                throw e
+            }
+        }
         return deferred.await()
     }
 
@@ -162,8 +175,7 @@ object RevengeBridgeRegistry : RevengeBridge {
      * Used by the built-in `revenge.__callableReturn` bridge method registered in [revengeBridgeSupport].
      */
     internal fun completeNextJsCallable(result: Any?, error: Any?) {
-        if (jsCallableReturnQueue.isEmpty()) return
-        val deferred = jsCallableReturnQueue.removeAt(0)
+        val deferred = synchronized(jsCallableLock) { jsCallableReturnQueue.removeFirstOrNull() } ?: return
         if (error != null) deferred.completeExceptionally(Error("JS returned error: $error"))
         else deferred.complete(result)
     }

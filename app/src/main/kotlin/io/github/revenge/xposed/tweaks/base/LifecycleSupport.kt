@@ -16,6 +16,8 @@ private var contextRef = WeakReference<Context>(null)
 @Volatile
 private var activityRef = WeakReference<Activity>(null)
 
+/** Guards both subscriber lists so a concurrent subscribe can't be lost mid-drain. */
+private val subscriberLock = Any()
 private val contextSubscribers = mutableListOf<(Context) -> Unit>()
 private val activitySubscribers = mutableListOf<(Activity) -> Unit>()
 
@@ -52,25 +54,41 @@ val lifecycleSupport by tweak {
 }
 
 private fun drainContextSubscribers(ctx: Context) {
-    val pending = contextSubscribers.toList()
-    contextSubscribers.clear()
+    val pending = synchronized(subscriberLock) {
+        val copy = contextSubscribers.toList()
+        contextSubscribers.clear()
+        copy
+    }
     for (s in pending) s(ctx)
 }
 
 private fun drainActivitySubscribers(act: Activity) {
-    val pending = activitySubscribers.toList()
-    activitySubscribers.clear()
+    val pending = synchronized(subscriberLock) {
+        val copy = activitySubscribers.toList()
+        activitySubscribers.clear()
+        copy
+    }
     for (s in pending) s(act)
 }
 
 /** Tweak or plugin code should use [io.github.revenge.xposed.api.HostScope.withAppContext] instead. */
 fun withAppContext(block: (Context) -> Unit) {
-    val ctx = contextRef.get()
-    if (ctx != null) block(ctx) else contextSubscribers += block
+    val ctx = synchronized(subscriberLock) {
+        contextRef.get() ?: run {
+            contextSubscribers += block
+            return
+        }
+    }
+    block(ctx)
 }
 
 /** Tweak or plugin code should use [io.github.revenge.xposed.api.HostScope.withAppActivity] instead. */
 fun withAppActivity(block: (Activity) -> Unit) {
-    val act = activityRef.get()
-    if (act != null) block(act) else activitySubscribers += block
+    val act = synchronized(subscriberLock) {
+        activityRef.get() ?: run {
+            activitySubscribers += block
+            return
+        }
+    }
+    block(act)
 }
