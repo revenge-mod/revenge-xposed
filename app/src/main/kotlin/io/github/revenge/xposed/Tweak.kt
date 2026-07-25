@@ -33,9 +33,17 @@ class TweakSpec internal constructor(
     val name: String,
     private val body: Tweak.() -> Unit,
 ) {
-    /** Run the tweak body against [context]. */
+    /**
+     * Run the tweak body against [context].
+     * Errors are caught and logged; they don't prevent other tweaks from running.
+     */
     fun applyTo(context: HostScope) {
-        Tweak(name, context).body()
+        val tweak = Tweak(name, context)
+        try {
+            tweak.body()
+        } catch (e: Throwable) {
+            tweak.log.e("Tweak '$name' failed to apply", e)
+        }
     }
 }
 
