@@ -98,7 +98,8 @@ val pluginLoader by tweak {
     // Some discovery errors aren't hard errors (unsatisfied deps), but won't allow the plugins to run in this session.
     // They can run once the issues are resolved (e.g. loader/plugin/Discord update).
     for ((id, failure) in discovery.failures)
-        if (failure.isPluginFault) clearPersistedState(id)
+        // Prefer the validated manifest's ID, [id] could be a directory name instead.
+        if (failure.isPluginFault) clearPersistedState(failure.manifest?.id ?: id)
     for (factory in internalPlugins + external) registry.add(factory)
 
     registerNativeMethod("revenge.plugins.getConstants") {
@@ -481,10 +482,7 @@ val pluginLoader by tweak {
                 enablePlugin(pluginId)
             }
         } else {
-            require(factory == null || InternalPluginFlags.ESSENTIAL !in factory.internalFlags) {
-                "Plugin $pluginId is essential and cannot be disabled"
-            }
-
+            // Essential plugins are rejected by disablePlugin itself.
             // Required dependents get disabled with it, linked optional ones just stop.
             disablePlugin(pluginId)
         }
@@ -593,16 +591,16 @@ private fun loadPlugin(
  * Stops a running plugin, taking every dependent that's actually linked to it down first.
  */
 private fun stopPlugin(pluginId: String) {
-    val stopping = loaded[pluginId] ?: return
-    val stoppingVersion = stopping.scope.manifest.version
+    if (pluginId !in loaded) return
 
     /* Snapshot since the cascade mutates [loaded]. */
     val dependents = loaded.entries.mapNotNull { (dependentId, dependent) ->
         val dep = dependent.scope.manifest.dependencies[pluginId] ?: return@mapNotNull null
+        // Linkage was decided at the dependent's load: optionals recorded as unsatisfied were never linked.
+        val unlinked = registry.factories[dependentId]?.unsatisfiedOptionalDependencies.orEmpty()
         when {
             !dep.optional -> dependentId to "required"
-            // If it's not satisfied, it wasn't linked in the first place
-            dep.version.satisfies(stoppingVersion) -> dependentId to "linked optional"
+            pluginId !in unlinked -> dependentId to "linked optional"
             else -> null
         }
     }
@@ -628,8 +626,12 @@ private fun stopPlugin(pluginId: String) {
 /**
  * Disables and stops a plugin. Required dependents (transitively) lose their persisted enabled state too,
  * since they can't run without this plugin anymore. Linked optionals only stop, they can load fine next start.
+ *
+ * Throws when the plugin is essential.
  */
 private fun disablePlugin(pluginId: String) {
+    require(!isEssential(pluginId)) { "Plugin $pluginId is essential and cannot be disabled" }
+
     val toDisable = mutableSetOf(pluginId)
     // Walk required manifest edges over every known plugin, loaded or not: a dependent that
     // never ran this session (disabled, session-failed) must still lose its enabled flag.
@@ -643,6 +645,11 @@ private fun disablePlugin(pluginId: String) {
                 !dep.optional && depId in toDisable
             }
             if (requiredOnDisabled) {
+                // Essential plugins can never be disabled, not even by cascade.
+                if (isEssential(dependentId)) {
+                    log.w("Not disabling essential plugin $dependentId despite its required dependency being disabled")
+                    continue
+                }
                 toDisable += dependentId
                 changed = true
             }
@@ -663,6 +670,10 @@ private fun enablePlugin(pluginId: String) {
     PluginStatesStore.states?.setPluginFlags(pluginId, setOf(PluginFlags.ENABLED))
     PluginStatesStore.writeNow()
 }
+
+/** Whether a plugin is flagged [InternalPluginFlags.ESSENTIAL]. Unknown IDs are never essential. */
+private fun isEssential(pluginId: String): Boolean =
+    registry.factories[pluginId]?.let { InternalPluginFlags.ESSENTIAL in it.internalFlags } ?: false
 
 /** Drops any persisted flags for an ID. */
 internal fun clearPersistedState(pluginId: String) {
