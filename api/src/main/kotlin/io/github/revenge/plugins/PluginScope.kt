@@ -32,8 +32,9 @@ interface PluginScope : HostScope {
     /**
      * Errors that this plugin encountered during lifecycles. This does not include JS errors.
      *
-     * You can emit any arbitrary Throwable to surface them in the UI.
-     * They're treated as non-fatal. won't stop and disable the plugin. You can manually run [HostScope].stop()
+     * You can emit any arbitrary [Throwable] to surface it in the UI.
+     * Emitted errors are treated as non-fatal: they won't stop or disable the plugin.
+     * Call [stop] or [disable] manually if an error should halt the plugin.
      */
     val errors: MutableSharedFlow<Throwable>
 
