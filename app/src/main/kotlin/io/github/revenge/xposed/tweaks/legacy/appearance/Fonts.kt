@@ -95,11 +95,9 @@ val fonts by tweak {
                         val ext = FontsState.FILE_EXTENSIONS.firstOrNull { url.endsWith(it) } ?: ".ttf"
                         val file = File(setDir, "$name$ext").apply { ensureFile() }
                         if (file.exists()) return@async
-                        httpClient.use { client ->
-                            val response: HttpResponse = client.get(url)
-                            if (response.status == HttpStatusCode.OK) {
-                                file.writeBytes(response.body())
-                            }
+                        val response: HttpResponse = httpClient.get(url)
+                        if (response.status == HttpStatusCode.OK) {
+                            file.writeBytes(response.body())
                         }
                     } catch (e: Throwable) {
                         log.e("Failed to download font ($name from $url)", e)
