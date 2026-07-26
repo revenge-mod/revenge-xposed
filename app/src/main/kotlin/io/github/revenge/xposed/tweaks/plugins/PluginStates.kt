@@ -56,6 +56,8 @@ fun Iterable<PluginFlags>.toBitmask(): Int {
 fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
     "enabled" to (PluginFlags.ENABLED in this),
     "pendingReload" to (PluginFlags.PENDING_RELOAD in this),
+    // @TODO: (2026-07-26) Remove this in a month's time.
+    "enabledLate" to (PluginFlags.STARTED_LATE in this),
     "startedLate" to (PluginFlags.STARTED_LATE in this),
 )
 
