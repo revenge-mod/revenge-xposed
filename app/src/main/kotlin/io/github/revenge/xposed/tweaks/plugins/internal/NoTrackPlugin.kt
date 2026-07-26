@@ -24,30 +24,35 @@ internal val noTrackPlugin =
              * Disables Discord's crash reporting + Sentry initialization.
              */
 
-            classLoader.loadClassOrNull("com.discord.crash_reporting.CrashReporting")?.let { cls ->
+            classLoader.loadClassOrNull("com.discord.crash_reporting.CrashReporting")?.apply {
+                // This only exists on 30720x (307+) and above.
                 runCatching {
-                    cls.method("init", Context::class.java, String::class.java).hook {
-                        before {
-                            log.i("Blocked CrashReporting initialization")
-                            result = null
-                        }
-                    }
-                }
-
-                // This only exists on 30720x and above.
-                runCatching {
-                    cls.method("isDisabled").hook {
+                    method("isDisabled").hook {
                         before {
                             log.i("Forced CrashReporting.isDisabled() to true")
                             result = true
                         }
                     }
+                }.onFailure {
+                    // In older versions, this hook works fine.
+                    // Hooking this on 30720x (307+) will result in a crash after a few seconds,
+                    // since Discord asserts initialization when setting a Sentry tag before checking isDisabled().
+                    // On around 33020x (330+), this hook only works because Discord catches the error themselves.
+                    // @TODO: We can remove this hook once we drop support for legacy versions.
+                    runCatching {
+                        method("init", Context::class.java, String::class.java).hook {
+                            before {
+                                log.i("Blocked CrashReporting initialization")
+                                result = null
+                            }
+                        }
+                    }
                 }
             }
 
-            classLoader.loadClassOrNull("io.sentry.android.core.SentryInitProvider")?.let { cls ->
+            classLoader.loadClassOrNull("io.sentry.android.core.SentryInitProvider")?.apply {
                 runCatching {
-                    cls.method("onCreate").hook {
+                    method("onCreate").hook {
                         before {
                             log.i("Blocked SentryInitProvider initialization")
                             result = true
@@ -60,9 +65,9 @@ internal val noTrackPlugin =
              * Disables Discord's AppsFlyer deep-links tracking.
              */
 
-            classLoader.loadClassOrNull("com.discord.deep_link.DeepLinks")?.let { cls ->
+            classLoader.loadClassOrNull("com.discord.deep_link.DeepLinks")?.apply {
                 runCatching {
-                    cls.method("init", Context::class.java).hook {
+                    method("init", Context::class.java).hook {
                         before {
                             log.i("Blocked DeepLinks tracking initialization")
                             result = null
