@@ -408,7 +408,7 @@ val pluginLoader by tweak {
             entry != null -> {
                 // was stopped earlier, we need to start again.
                 if (!entry.started) {
-                    entry.scope.flags.value += PluginFlags.ENABLED_LATE
+                    entry.scope.flags.value += PluginFlags.STARTED_LATE
                     try {
                         entry.plugin.start(entry.scope)
                     } catch (e: Throwable) {
@@ -546,7 +546,7 @@ private fun loadPlugin(
         flags.value += PluginFlags.ENABLED
     }
 
-    if (late) flags.value += PluginFlags.ENABLED_LATE
+    if (late) flags.value += PluginFlags.STARTED_LATE
 
     val pluginScope = PluginScopeImpl(tweakCtx, plugin, flags)
 
@@ -769,7 +769,7 @@ private class PluginScopeImpl(
     override val errors = MutableSharedFlow<Throwable>(replay = 1000)
 
     override val enabled get() = PluginFlags.ENABLED in flags.value
-    override val enabledLate get() = PluginFlags.ENABLED_LATE in flags.value
+    override val startedLate get() = PluginFlags.STARTED_LATE in flags.value
 
     override fun requireReload() {
         flags.value += PluginFlags.PENDING_RELOAD

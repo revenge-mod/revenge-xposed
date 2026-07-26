@@ -24,10 +24,10 @@ interface PluginScope : HostScope {
     val enabled: Boolean
 
     /**
-     * Whether this plugin was enabled *after* the initial load (e.g. user-toggled at runtime).
+     * Whether this plugin was started *after* the initial load (e.g. user-toggled at runtime).
      * Plugins that perform early-only work should react by calling [requireReload].
      */
-    val enabledLate: Boolean
+    val startedLate: Boolean
 
     /**
      * Errors that this plugin encountered during lifecycles. This does not include JS errors.

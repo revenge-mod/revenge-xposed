@@ -19,7 +19,7 @@ private val manifest = PluginManifest(
 internal val preventOtaUpdatesPlugin =
     internalPlugin(manifest, setOf(InternalPluginFlags.INTERNAL)) {
         start {
-            if (enabledLate) {
+            if (startedLate) {
                 withAppActivity {
                     it.runOnUiThread {
                         AlertDialog.Builder(it)

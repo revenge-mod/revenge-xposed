@@ -41,7 +41,7 @@ enum class PluginFlags(val bit: Int = 0) {
     PENDING_RELOAD,
 
     /** The plugin was enabled *after* the initial load (e.g. user-toggled at runtime). */
-    ENABLED_LATE,
+    STARTED_LATE,
 }
 
 fun pluginFlagsFromBitmask(mask: Int): Set<PluginFlags> =
@@ -56,7 +56,7 @@ fun Iterable<PluginFlags>.toBitmask(): Int {
 fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
     "enabled" to (PluginFlags.ENABLED in this),
     "pendingReload" to (PluginFlags.PENDING_RELOAD in this),
-    "enabledLate" to (PluginFlags.ENABLED_LATE in this),
+    "startedLate" to (PluginFlags.STARTED_LATE in this),
 )
 
 /**
