@@ -1,15 +1,15 @@
 package io.github.revenge.xposed.tweaks.bridge
 
-import de.robv.android.xposed.XposedHelpers
+import de.robv.android.xposed.XposedHelpers.findAndHookConstructor
+import de.robv.android.xposed.XposedHelpers.getStaticObjectField
 import io.github.revenge.Logger
 import io.github.revenge.bridge.RevengeBridge
 import io.github.revenge.logger
 import io.github.revenge.xposed.*
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
+import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry.dispatchScope
+import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry.jsCallableLock
+import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry.toNativeObject
+import kotlinx.coroutines.*
 import java.lang.ref.WeakReference
 import java.lang.reflect.Method
 
@@ -37,6 +37,10 @@ object RevengeBridgeRegistry : RevengeBridge {
 
     @Volatile
     private var argumentsMakeNativeObject: Method? = null
+
+    @Volatile
+    // @TODO: Can be null on <341202, once that passes stable, we can non-null assert at callsites
+    private var argumentsInstance: Any? = null
 
     @Volatile
     private var readableMapToHashMap: Method? = null
@@ -94,10 +98,12 @@ object RevengeBridgeRegistry : RevengeBridge {
 
     internal fun setReflectiveMethods(
         callFunctionOnModule: Method,
+        argumentsInstance: Any?,
         makeNativeObject: Method,
         toHashMap: Method,
     ) {
         reactInstanceCallFunctionOnModule = callFunctionOnModule
+        RevengeBridgeRegistry.argumentsInstance = argumentsInstance
         argumentsMakeNativeObject = makeNativeObject
         readableMapToHashMap = toHashMap
     }
@@ -180,8 +186,8 @@ object RevengeBridgeRegistry : RevengeBridge {
         else deferred.complete(result)
     }
 
-    private fun Any?.toNativeObject(): Any? = argumentsMakeNativeObject!!.invoke(
-        null,
+    internal fun Any?.toNativeObject(): Any? = argumentsMakeNativeObject!!.invoke(
+        argumentsInstance,
         if (this == Unit) null else this,
     )
 }
@@ -207,9 +213,10 @@ val revengeBridgeSupport by tweak {
     )
 
     RevengeBridgeRegistry.setReflectiveMethods(
-        callFunctionOnModule = callFunctionOnModule,
-        makeNativeObject = makeNativeObject,
-        toHashMap = toHashMap,
+        callFunctionOnModule,
+        runCatching { getStaticObjectField(arguments, "INSTANCE") }.getOrNull(),
+        makeNativeObject,
+        toHashMap,
     )
 
     // JS -> native (sync)
@@ -220,7 +227,7 @@ val revengeBridgeSupport by tweak {
                 before {
                     val callData = args[1] ?: return@before
                     val response = RevengeBridgeRegistry.tryDispatchNative(callData) ?: return@before
-                    result = makeNativeObject.invoke(null, response as Any)
+                    result = runCatching { response.toNativeObject() }.getOrNull()
                 }
             }
     }.onFailure { log.w("RNSVGRenderableManager not available; getBBox bridge path disabled.") }
@@ -233,14 +240,14 @@ val revengeBridgeSupport by tweak {
                 val callData = args[0] ?: return@before
                 val promiseObj = args[1]!!
                 val handled = RevengeBridgeRegistry.tryDispatchNativeAsync(callData) { response ->
-                    promiseResolve.invoke(promiseObj, makeNativeObject.invoke(null, response as Any))
+                    promiseResolve.invoke(promiseObj, runCatching { response.toNativeObject() }.getOrNull())
                 }
                 if (handled) result = null
             }
         }
 
     // Native -> JS
-    XposedHelpers.findAndHookConstructor(
+    findAndHookConstructor(
         reactInstanceClass,
         "com.facebook.react.runtime.BridgelessReactContext",
         "com.facebook.react.runtime.ReactHostDelegate",
