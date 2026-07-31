@@ -711,10 +711,11 @@ private fun PluginFactory.dependencyProblems(
 private fun isPluginEnabledNow(pluginId: String, factory: PluginFactory?): Boolean {
     loaded[pluginId]?.let { return PluginFlags.ENABLED in it.scope.flags.value }
     val states = PluginStatesStore.states
-    if (states?.isPluginEnabled(pluginId) == true) return true
+    if (states?.isPluginEnabledInSaved(pluginId) == true) return true
     if (factory == null) return false
     return InternalPluginFlags.ESSENTIAL in factory.internalFlags ||
-            (InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags && states?.hasPlugin(pluginId) != true)
+            (InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags &&
+                    states?.hasPluginInSaved(pluginId) != true)
 }
 
 /**

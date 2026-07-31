@@ -7,15 +7,24 @@ import io.github.revenge.reloadApp
 import io.github.revenge.xposed.RevengeConstants
 import io.github.revenge.xposed.tweak
 import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
+import io.github.revenge.xposed.tweaks.plugins.PluginStatesStore
 import java.io.File
 
 fun showRecoveryAlert(context: Context) {
     AlertDialog.Builder(context)
         .setTitle("Revenge Recovery Options")
-        .setItems(arrayOf("Reload", "Delete Script", "Reset Loader Config")) { _, which ->
+        .setItems(
+            arrayOf("Reload", "Recovery Mode", "Delete Script", "Reset Loader Config"),
+        ) { _, which ->
             when (which) {
                 0 -> reloadApp()
+
                 1 -> {
+                    PluginStatesStore.requestDefaultsOnlyBoot(context.dataDir.absolutePath)
+                    reloadApp()
+                }
+
+                2 -> {
                     val bundleFile = File(
                         context.dataDir,
                         "${RevengeConstants.CACHE_DIR}/${RevengeConstants.MAIN_SCRIPT_FILE}",
@@ -24,7 +33,7 @@ fun showRecoveryAlert(context: Context) {
                     reloadApp()
                 }
 
-                2 -> {
+                3 -> {
                     RevengeUpdater.resetLoaderConfig()
                     reloadApp()
                 }

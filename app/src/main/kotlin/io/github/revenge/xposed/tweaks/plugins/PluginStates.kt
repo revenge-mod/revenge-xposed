@@ -14,11 +14,14 @@ import java.io.*
 val pluginStates by tweak {
     // Load eagerly using appInfo.dataDir so the loader tweak (which doesn't need a Context) can read states during plugin construction.
     val dataDir = appInfo.dataDir
-    PluginStatesStore.ensureLoaded(dataDir)
 
     with(RevengeBridgeRegistry) {
         registerMethod("revenge.plugins.states.read") {
-            PluginStatesStore.states?.toMap()
+            PluginStatesStore.ensureLoaded(dataDir).toMap()
+        }
+
+        registerMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
+            PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
         }
     }
 }
@@ -67,6 +70,7 @@ fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
 object PluginStatesStore {
     private const val DATA_DIR = "files/revenge/plugins"
     private const val STATES_FILE = "states"
+    private const val DEFAULTS_ONLY_MARKER_FILE = ".defaults-only"
 
     internal val log: Logger = logger("pluginStates")
 
@@ -74,18 +78,49 @@ object PluginStatesStore {
     var states: PluginsStates? = null
         private set
 
+    /**
+     * Read the states file as if it were empty, so only essential and enabled-by-default plugins run for one boot.
+     *
+     * Reads are overlayed, writes hit the real states file, so the user can disable the problematic plugin.
+     */
+    @Volatile
+    var defaultsOnly: Boolean = false
+        private set
+
     @Volatile
     private var isBatchSaving = false
+
+    private fun statesDir(dataDir: String) = File(dataDir, DATA_DIR).apply { if (!exists()) mkdirs() }
 
     fun ensureLoaded(dataDir: String): PluginsStates {
         states?.let { return it }
         synchronized(this) {
             states?.let { return it }
-            val dir = File(dataDir, DATA_DIR).apply { if (!exists()) mkdirs() }
+            val dir = statesDir(dataDir)
+
+            val marker = File(dir, DEFAULTS_ONLY_MARKER_FILE)
+            if (marker.exists()) {
+                defaultsOnly = true
+                marker.delete()
+                log.i("Booting with default plugins only")
+            }
+
             val file = File(dir, STATES_FILE)
             val loaded = PluginsStates.loadFromFileOrNull(file, log) ?: PluginsStates(file, emptyMap())
             states = loaded
             return loaded
+        }
+    }
+
+    fun requestDefaultsOnlyBoot(dataDir: String) {
+        File(statesDir(dataDir), DEFAULTS_ONLY_MARKER_FILE).writeText("")
+    }
+
+    /** Test: drops the cached states so [ensureLoaded] reads from disk again. */
+    internal fun resetForTests() {
+        synchronized(this) {
+            states = null
+            defaultsOnly = false
         }
     }
 
@@ -118,6 +153,7 @@ object PluginStatesStore {
 
     /** Persisted flags for a plugin, or `null` if none were saved. */
     fun loadPluginFlags(pluginId: String): Set<PluginFlags>? {
+        if (defaultsOnly) return null
         val s = states ?: return null
         val savedFlags = s.flags[pluginId]?.toInt() ?: return null
         return pluginFlagsFromBitmask(savedFlags)
@@ -135,12 +171,24 @@ data class PluginsStates(
 
     @Synchronized
     fun isPluginEnabled(pluginId: String): Boolean {
+        return !PluginStatesStore.defaultsOnly && isPluginEnabledInSaved(pluginId)
+    }
+
+    @Synchronized
+    fun hasPlugin(pluginId: String): Boolean {
+        return !PluginStatesStore.defaultsOnly && hasPluginInSaved(pluginId)
+    }
+
+    /** Enabled in the user's saved setup, ignoring the defaults-only overlay. */
+    @Synchronized
+    fun isPluginEnabledInSaved(pluginId: String): Boolean {
         val pf = flags[pluginId]?.toInt() ?: return false
         return (pf and PluginFlags.ENABLED.bit) != 0
     }
 
+    /** Saved in the user's setup, ignoring the defaults-only overlay. */
     @Synchronized
-    fun hasPlugin(pluginId: String): Boolean = flags.containsKey(pluginId)
+    fun hasPluginInSaved(pluginId: String): Boolean = flags.containsKey(pluginId)
 
     @Synchronized
     fun setPluginFlags(pluginId: String, pluginFlags: Iterable<PluginFlags>) {
@@ -173,9 +221,16 @@ data class PluginsStates(
         }
     }
 
-    fun toMap(): Map<String, Any> = mapOf(
-        "states" to flags.mapValues { pluginFlagsFromBitmask(it.value.toInt()).toJSPayload() },
-    )
+    fun toMap(): Map<String, Any> = buildMap {
+        val saved = flags.mapValues { pluginFlagsFromBitmask(it.value.toInt()).toJSPayload() }
+
+        // Empty in defaults-only so JS uses its defaults and runs nothing extra.
+        put("states", if (PluginStatesStore.defaultsOnly) emptyMap<String, Any>() else saved)
+
+        // The real saved states sent only when running defaults-only,
+        // so the UI can show and edit what actually applies on the next reload.
+        if (PluginStatesStore.defaultsOnly) put("savedStates", saved)
+    }
 
     companion object {
         const val CURRENT_VERSION = 1
