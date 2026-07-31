@@ -65,6 +65,10 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
     }
 
     override fun handleLoadPackage(param: XC_LoadPackage.LoadPackageParam) {
+        // Only hook the main process.
+        // Discord uses ProcessPhoenix to spawn a ":phoenix" process to restart the app. It will cause concurrency issues.
+        if (param.processName != param.packageName) return
+
         if (hooked) return
         hooked = true
 
