@@ -2,6 +2,7 @@ package io.github.revenge.xposed.tweaks
 
 import io.github.revenge.reloadApp
 import io.github.revenge.xposed.*
+import io.github.revenge.xposed.tweaks.plugins.internal.showRecoveryAlert
 
 /**
  * Enables LogBox and makes the shake gesture alert show our recovery options.

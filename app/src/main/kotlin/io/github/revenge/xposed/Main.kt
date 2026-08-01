@@ -50,7 +50,6 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         // Consumers
         discordDevSupport,
-        revengeRecovery,
         additionalBridgeMethods,
         fonts,
         themes,

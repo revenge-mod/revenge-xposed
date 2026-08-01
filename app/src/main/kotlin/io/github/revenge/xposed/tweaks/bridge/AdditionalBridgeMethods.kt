@@ -1,63 +1,18 @@
 package io.github.revenge.xposed.tweaks.bridge
 
-import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
-import android.content.Context
-import android.os.Build
-import android.widget.Toast
 import io.github.revenge.bridge.asDelegate
 import io.github.revenge.reloadApp
 import io.github.revenge.xposed.openFileGuarded
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.showRecoveryAlert
-import io.github.revenge.xposed.versionCode
-import io.github.revenge.xposed.versionName
 import java.io.File
 
 /**
- * `revenge.fs.*` + `revenge.alertError` + `revenge.app.reload` bridge methods.
+ * `revenge.fs.*` + `revenge.app.*` bridge methods.
  */
 val additionalBridgeMethods by tweak {
     with(RevengeBridgeRegistry) {
         registerMethod("revenge.app.reload") {
             reloadApp()
-        }
-
-        withAppActivity { act ->
-            registerMethod("revenge.alertError") {
-                val (error, version) = it
-                val errorString = "$error"
-
-                val clipboard = act.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                val clip = ClipData.newPlainText("Stack Trace", errorString)
-
-                AlertDialog.Builder(act)
-                    .setTitle("Revenge Error")
-                    .setMessage(
-                        """
-                    Revenge: $version
-                    Discord: ${act.versionName()} (${act.versionCode()})
-                    Device: ${Build.MANUFACTURER} ${Build.MODEL}
-                    
-                    
-                """.trimIndent() + errorString
-                    )
-                    .setPositiveButton(android.R.string.ok) { dialog, _ -> dialog.dismiss() }
-                    .setNeutralButton(android.R.string.copy) { dialog, _ ->
-                        @Suppress("UsePropertyAccessSyntax")
-                        clipboard.setPrimaryClip(clip)
-                        Toast.makeText(act, "Copied stack trace", Toast.LENGTH_SHORT).show()
-                        dialog.dismiss()
-                    }
-                    .setNegativeButton("Recovery") { dialog, _ ->
-                        showRecoveryAlert(act)
-                        dialog.dismiss()
-                    }
-                    .show()
-
-                null
-            }
         }
 
         withAppContext { ctx ->

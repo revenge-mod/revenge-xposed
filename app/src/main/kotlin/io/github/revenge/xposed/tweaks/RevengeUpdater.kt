@@ -8,6 +8,7 @@ import io.github.revenge.logger
 import io.github.revenge.reloadApp
 import io.github.revenge.xposed.*
 import io.github.revenge.xposed.tweaks.base.withAppActivity
+import io.github.revenge.xposed.tweaks.plugins.internal.showRecoveryAlert
 import kotlinx.coroutines.*
 import kotlinx.serialization.Serializable
 import java.io.File
