@@ -7,6 +7,7 @@ import io.github.revenge.xposed.ensureDir
 import io.github.revenge.xposed.ensureFile
 import io.github.revenge.xposed.tweak
 import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
+import io.github.revenge.xposed.tweaks.plugins.DISCORD_OTA_COMMIT
 import io.github.revenge.xposed.versionCode
 import java.io.*
 
@@ -15,12 +16,20 @@ import java.io.*
  */
 val caches by tweak {
     val log: Logger = this.log
+
     withAppContext { ctx ->
         val revengeCacheDir = File(ctx.cacheDir, "revenge").apply { ensureDir() }
         val versionCode = ctx.versionCode()
 
-        val modulesCacheFile = File(revengeCacheDir, "modules.$versionCode").apply { ensureFile() }
-        val assetsCacheFile = File(revengeCacheDir, "assets.$versionCode").apply { ensureFile() }
+        fun cacheFileName(type: String): String {
+            var name = "$type.$versionCode"
+            if (DISCORD_OTA_COMMIT != null) name = "$name.$DISCORD_OTA_COMMIT"
+            log.d("$type cache at: $name")
+            return name
+        }
+
+        val modulesCacheFile by lazy { File(revengeCacheDir, cacheFileName("modules")).apply { ensureFile() } }
+        val assetsCacheFile by lazy { File(revengeCacheDir, cacheFileName("assets")).apply { ensureFile() } }
 
         var modulesCache: ModulesCache? = null
         var assetsCache: AssetsCache? = null
