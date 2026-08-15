@@ -1,4 +1,4 @@
-package io.github.revenge.xposed.tweaks.plugins
+package io.github.revenge.xposed.tweaks
 
 import android.content.Context
 import de.robv.android.xposed.XposedHelpers

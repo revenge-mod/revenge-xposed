@@ -7,7 +7,6 @@ import io.github.revenge.xposed.ensureDir
 import io.github.revenge.xposed.ensureFile
 import io.github.revenge.xposed.tweak
 import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
-import io.github.revenge.xposed.tweaks.plugins.DISCORD_OTA_COMMIT
 import io.github.revenge.xposed.versionCode
 import java.io.*
 

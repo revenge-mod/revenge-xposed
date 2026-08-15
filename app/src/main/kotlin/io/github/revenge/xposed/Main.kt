@@ -18,7 +18,7 @@ import io.github.revenge.xposed.tweaks.legacy.appearance.fonts
 import io.github.revenge.xposed.tweaks.legacy.appearance.sysColors
 import io.github.revenge.xposed.tweaks.legacy.appearance.themes
 import io.github.revenge.xposed.tweaks.legacy.revengePayloadGlobal
-import io.github.revenge.xposed.tweaks.plugins.discordVersionRetriever
+import io.github.revenge.xposed.tweaks.discordVersionRetriever
 import io.github.revenge.xposed.tweaks.plugins.pluginLoader
 import io.github.revenge.xposed.tweaks.plugins.pluginStates
 import io.github.revenge.xposed.tweaks.plugins.repos.pluginRepos
