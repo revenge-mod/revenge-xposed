@@ -555,21 +555,21 @@ private fun loadPlugin(
     val persistJob = flags.drop(1).onEach { newFlags ->
         PluginStatesStore.updatePluginFlags(manifest, newFlags)
 
-        scope.launch {
-            runCatching {
-                tweakCtx.callJSMethod(
-                    "revenge.plugins.states.update",
-                    listOf(manifest.id, newFlags.toJSPayload())
-                )
-            }
+        runCatching {
+            tweakCtx.callJSMethod(
+                "revenge.plugins.states.update",
+                listOf(manifest.id, newFlags.toJSPayload())
+            )
         }
     }.launchIn(scope)
 
     val errorSyncJob = pluginScope.errors.onEach {
-        pluginScope.callJSMethod(
-            EVENT_PLUGIN_ERRORED,
-            listOf(manifest.id, pluginScope.errorsJSPayload)
-        )
+        runCatching {
+            pluginScope.callJSMethod(
+                EVENT_PLUGIN_ERRORED,
+                listOf(manifest.id, pluginScope.errorsJSPayload)
+            )
+        }
     }.launchIn(scope)
 
     // Real plugin errors only happen here.
