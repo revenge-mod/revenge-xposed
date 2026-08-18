@@ -34,7 +34,7 @@ interface RevengeBridge {
     /**
      * Invoke a JS method on the `RevengeBridge` callable module and await JS's `revenge.__callableReturn` reply.
      *
-     * Throws if JS responds with `{ error: ... }`. May suspend indefinitely if JS never replies.
+     * Throws if JS responds with `{ error: ... }` or if JavaScript isn't ready. May suspend forever if JS never replies.
      */
     suspend fun callJSMethod(name: String, args: List<Any?> = emptyList()): Any?
 }

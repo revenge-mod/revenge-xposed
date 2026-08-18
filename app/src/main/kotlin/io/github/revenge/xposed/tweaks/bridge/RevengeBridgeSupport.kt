@@ -180,7 +180,7 @@ object RevengeBridgeRegistry : RevengeBridge {
      * Completes the next pending [CompletableDeferred] in the JS-callable return queue.
      * Used by the built-in `revenge.__callableReturn` bridge method registered in [revengeBridgeSupport].
      */
-    internal fun completeNextJsCallable(result: Any?, error: Any?) {
+    internal fun completeNextJSCallable(result: Any?, error: Any?) {
         val deferred = synchronized(jsCallableLock) { jsCallableReturnQueue.removeFirstOrNull() } ?: return
         if (error != null) deferred.completeExceptionally(Error("JS returned error: $error"))
         else deferred.complete(result)
@@ -268,7 +268,7 @@ val revengeBridgeSupport by tweak {
     RevengeBridgeRegistry.registerMethod("revenge.__callableReturn") { args ->
         @Suppress("UNCHECKED_CAST")
         val data = args.firstOrNull() as? Map<String, Any?> ?: emptyMap()
-        RevengeBridgeRegistry.completeNextJsCallable(
+        RevengeBridgeRegistry.completeNextJSCallable(
             result = data["result"],
             error = data["error"],
         )

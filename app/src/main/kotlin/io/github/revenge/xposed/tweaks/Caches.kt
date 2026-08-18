@@ -3,10 +3,10 @@ package io.github.revenge.xposed.tweaks
 import android.util.AtomicFile
 import io.github.revenge.Logger
 import io.github.revenge.bridge.asDelegate
+import io.github.revenge.xposed.api.registerNativeMethod
 import io.github.revenge.xposed.ensureDir
 import io.github.revenge.xposed.ensureFile
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
 import io.github.revenge.xposed.versionCode
 import java.io.*
 
@@ -33,33 +33,31 @@ val caches by tweak {
         var modulesCache: ModulesCache? = null
         var assetsCache: AssetsCache? = null
 
-        with(RevengeBridgeRegistry) {
-            registerMethod("revenge.caches.modules.read") {
-                (modulesCache ?: ModulesCache.loadFromFileOrNull(modulesCacheFile, log)?.also { modulesCache = it })
-                    ?.toMap()
-            }
+        registerNativeMethod("revenge.caches.modules.read") {
+            (modulesCache ?: ModulesCache.loadFromFileOrNull(modulesCacheFile, log)?.also { modulesCache = it })
+                ?.toMap()
+        }
 
-            registerMethod("revenge.caches.modules.write") { args ->
-                val argv = args.asDelegate()
-                val blacklist by argv.arrayList<Double>()
-                val finds by argv.hashMap<String, HashMap<String, Double>?>()
-                modulesCache = ModulesCache(blacklist, finds).also { it.saveToFile(modulesCacheFile) }
-                log.i("Modules cache saved: ${modulesCacheFile.absolutePath} (blacklisted: ${blacklist.size}, finds: ${finds.size})")
-                null
-            }
+        registerNativeMethod("revenge.caches.modules.write") { args ->
+            val argv = args.asDelegate()
+            val blacklist by argv.arrayList<Double>()
+            val finds by argv.hashMap<String, HashMap<String, Double>?>()
+            modulesCache = ModulesCache(blacklist, finds).also { it.saveToFile(modulesCacheFile) }
+            log.i("Modules cache saved: ${modulesCacheFile.absolutePath} (blacklisted: ${blacklist.size}, finds: ${finds.size})")
+            null
+        }
 
-            registerMethod("revenge.caches.assets.read") {
-                (assetsCache ?: AssetsCache.loadFromFileOrNull(assetsCacheFile, log)?.also { assetsCache = it })
-                    ?.toMap()
-            }
+        registerNativeMethod("revenge.caches.assets.read") {
+            (assetsCache ?: AssetsCache.loadFromFileOrNull(assetsCacheFile, log)?.also { assetsCache = it })
+                ?.toMap()
+        }
 
-            registerMethod("revenge.caches.assets.write") { args ->
-                val argv = args.asDelegate()
-                val data by argv.hashMap<String, HashMap<String, Double>>()
-                assetsCache = AssetsCache(data).also { it.saveToFile(assetsCacheFile) }
-                log.i("Assets cache saved: ${assetsCacheFile.absolutePath} (count: ${data.size})")
-                null
-            }
+        registerNativeMethod("revenge.caches.assets.write") { args ->
+            val argv = args.asDelegate()
+            val data by argv.hashMap<String, HashMap<String, Double>>()
+            assetsCache = AssetsCache(data).also { it.saveToFile(assetsCacheFile) }
+            log.i("Assets cache saved: ${assetsCacheFile.absolutePath} (count: ${data.size})")
+            null
         }
     }
 }
