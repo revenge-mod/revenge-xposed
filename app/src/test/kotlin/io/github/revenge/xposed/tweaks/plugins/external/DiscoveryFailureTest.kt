@@ -1,9 +1,11 @@
-package io.github.revenge.xposed.tweaks.plugins
+package io.github.revenge.xposed.tweaks.plugins.external
 
-import io.github.revenge.logger
+
 import io.github.revenge.plugins.API_DEPENDENCY_ID
 import io.github.revenge.plugins.DISCORD_DEPENDENCY_ID
 import io.github.revenge.plugins.Version
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.externalPluginsRoot
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.*
@@ -14,7 +16,6 @@ import kotlin.test.*
  */
 class DiscoveryFailureTest {
     private val dataDir: File = Files.createTempDirectory("revenge-discovery-test").toFile()
-    private val log = logger("test")
 
     private val knownVersions = mapOf(
         API_DEPENDENCY_ID to Version.parse("1.0.0"),
@@ -52,7 +53,7 @@ class DiscoveryFailureTest {
         File(dir, "plugin.js").writeText("() => ({})")
     }
 
-    private fun discover() = discoverExternalPlugins(dataDir.absolutePath, knownVersions, log)
+    private fun discover() = discoverExternalPlugins(dataDir.absolutePath, knownVersions)
 
     @Test
     fun `valid plugin loads with no failures`() {
@@ -74,7 +75,7 @@ class DiscoveryFailureTest {
         val failure = discovery.failures["com.example.broken"]
         assertNotNull(failure)
         assertNotNull(failure.manifest)
-        assertEquals("com.example.broken", failure.manifest?.id)
+        assertEquals("com.example.broken", failure.manifest.id)
         val error = failure.errors.single()
         assertEquals(PluginErrorCodes.DEPENDENCY_MISSING, error.code)
         assertTrue("missing dependency 'com.example.gone'" in error.message)

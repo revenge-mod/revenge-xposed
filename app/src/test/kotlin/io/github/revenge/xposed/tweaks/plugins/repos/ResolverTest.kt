@@ -2,7 +2,7 @@ package io.github.revenge.xposed.tweaks.plugins.repos
 
 import io.github.revenge.plugins.Version
 import io.github.revenge.plugins.VersionRange
-import io.github.revenge.xposed.tweaks.plugins.ExternalDependency
+import io.github.revenge.xposed.tweaks.plugins.external.ExternalDependency
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -133,7 +133,7 @@ class ResolverTest {
             ),
         )
 
-        assertFailsWith<ResolveException> {
+        assertFailsWith<PluginSystemResolveException> {
             resolveInstall(ResolveRequest("com.example.a"), repos, API, emptyMap())
         }
     }
@@ -203,6 +203,92 @@ class ResolverTest {
 
         assertEquals(Version.parse("1.0.0"), plan.actions.single().version)
         assertTrue(plan.warnings.any { "Downgrading" in it })
+    }
+
+    @Test
+    fun `a held dependency that already satisfies the range needs no action`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(
+                    versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=1 <2")))),
+                ),
+                "com.example.lib" to plugin(versions = mapOf("1.5.0" to version(), "1.9.0" to version())),
+            ),
+        )
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a"),
+            repos,
+            API + ("com.example.lib" to Version.parse("1.5.0")),
+            mapOf("com.example.lib" to PluginSource(repo = REPO_A, held = true)),
+        )
+
+        assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
+    }
+
+    @Test
+    fun `a held dependency that does not satisfy aborts instead of updating it`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(
+                    versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=2")))),
+                ),
+                "com.example.lib" to plugin(versions = mapOf("1.0.0" to version(), "2.0.0" to version())),
+            ),
+        )
+
+        val error = assertFailsWith<PluginSystemResolveException> {
+            resolveInstall(
+                ResolveRequest("com.example.a"),
+                repos,
+                API + ("com.example.lib" to Version.parse("1.0.0")),
+                mapOf("com.example.lib" to PluginSource(repo = REPO_A, held = true)),
+            )
+        }
+
+        assertTrue("held" in error.message!!, error.message!!)
+    }
+
+    @Test
+    fun `a held optional dependency that does not satisfy is skipped with a warning`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(
+                    versions = mapOf(
+                        "1.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=2", optional = true))),
+                    ),
+                ),
+                "com.example.lib" to plugin(versions = mapOf("1.0.0" to version(), "2.0.0" to version())),
+            ),
+        )
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a"),
+            repos,
+            API + ("com.example.lib" to Version.parse("1.0.0")),
+            mapOf("com.example.lib" to PluginSource(repo = REPO_A, held = true)),
+        )
+
+        assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
+        assertTrue(plan.warnings.any { "com.example.lib" in it })
+    }
+
+    @Test
+    fun `a hold never constrains the requested plugin itself`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(versions = mapOf("1.0.0" to version(), "2.0.0" to version())),
+            ),
+        )
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a", version = "2.0.0"),
+            repos,
+            API + ("com.example.a" to Version.parse("1.0.0")),
+            mapOf("com.example.a" to PluginSource(repo = REPO_A, held = true)),
+        )
+
+        assertEquals(Version.parse("2.0.0"), plan.actions.single().version)
     }
 
     @Test

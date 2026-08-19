@@ -4,21 +4,15 @@ import io.github.revenge.Logger
 import io.github.revenge.plugins.Version
 import io.github.revenge.plugins.VersionRange
 import io.github.revenge.xposed.RevengeJson
-import io.github.revenge.xposed.tweaks.plugins.ExternalDependency
-import io.github.revenge.xposed.tweaks.plugins.requireValidPluginId
-import io.github.revenge.xposed.tweaks.plugins.validatedPluginIcon
+import io.github.revenge.xposed.tweaks.plugins.external.ExternalDependency
+import io.github.revenge.xposed.tweaks.plugins.external.requireValidPluginId
+import io.github.revenge.xposed.tweaks.plugins.external.validatedPluginIcon
 import kotlinx.serialization.Serializable
 
-/** The supported repository `index.json` format version. */
+/** The supported repository index format version. */
 internal const val REPO_INDEX_FORMAT = 1
 
-/**
- * A plugin repository index: one static `index.json` served over HTTPS.
- *
- * The repository's URL is its identity. Everything the client needs to browse, resolve
- * and install plugins from the repository is in this single document; artifact integrity
- * is anchored through per-version [RepoVersion.sha256] digests.
- */
+// The URL is its identity.
 @Serializable
 internal data class RepoIndex(
     /** Only [REPO_INDEX_FORMAT] is accepted. */
@@ -31,7 +25,6 @@ internal data class RepoIndex(
     val plugins: Map<String, RepoPlugin> = emptyMap(),
 )
 
-/** A plugin as listed in a repository index. */
 @Serializable
 internal data class RepoPlugin(
     val name: String,
@@ -49,7 +42,7 @@ internal data class RepoPlugin(
     val versions: Map<String, RepoVersion> = emptyMap(),
 )
 
-/** One published version of a plugin in a repository index. */
+/** A published plugin version. */
 @Serializable
 internal data class RepoVersion(
     /** Absolute URL of the plugin ZIP artifact. */
@@ -72,16 +65,15 @@ internal const val REPO_CHANNEL_LATEST = "latest"
 
 private val SHA256_HEX_REGEX = Regex("^[0-9a-f]{64}$")
 
-private fun isAbsoluteHttpUrl(url: String) =
-    url.startsWith("https://") || url.startsWith("http://")
+private fun isAbsoluteHttpUrl(url: String) = url.startsWith("https://") || url.startsWith("http://")
 
 /**
- * Parse and sanitize a repository index document.
+ * Parses and sanitizes a repository index document.
  *
- * Fails (throws) only on unparseable JSON or an unsupported [RepoIndex.format], with these extra rules:
+ * Throws on unparseable JSON, an unsupported [RepoIndex.format], with these extra rules:
  * - Icons that aren't asset names or data URLs are stripped (see [validatedPluginIcon]).
- * - Structurally invalid versions (bad version grammar, non-absolute [RepoVersion.url], malformed [RepoVersion.sha256],
- *   non-positive size, invalid dependency ids/ranges) are dropped with a warning.
+ * - Structurally invalid versions (bad version format, non-absolute [RepoVersion.url], malformed [RepoVersion.sha256],
+ *   non-positive size, invalid dependency IDs/ranges) are dropped with a warning.
  * - Channel pointers naming a missing/dropped version are dropped with a warning.
  * - Plugins with an invalid ID or no remaining versions are dropped with a warning.
  */
@@ -127,7 +119,10 @@ internal fun parseRepoIndex(json: String, repoUrl: String, log: Logger): RepoInd
                 }
             }
 
-            put(id, plugin.copy(icon = plugin.icon?.let(::validatedPluginIcon), channels = channels, versions = versions))
+            put(
+                id,
+                plugin.copy(icon = plugin.icon?.let(::validatedPluginIcon), channels = channels, versions = versions)
+            )
         }
     }
 

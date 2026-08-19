@@ -4,8 +4,14 @@ import io.github.revenge.plugins.PluginBuilder
 import io.github.revenge.plugins.PluginDependency
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.plugin
-import io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags
 import io.github.revenge.xposed.tweaks.plugins.PluginFactory
+
+enum class InternalPluginFlags {
+    INTERNAL,
+    ESSENTIAL,
+    ENABLED_BY_DEFAULT,
+    API,
+}
 
 internal fun internalPlugin(
     manifest: PluginManifest,

@@ -5,32 +5,21 @@ import io.github.revenge.Logger
 import io.github.revenge.logger
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
 import java.io.*
 
 /**
  * Plugin-state persistence + exposes `revenge.plugins.states.*` bridge methods.
  */
 val pluginStates by tweak {
-    // Load eagerly using appInfo.dataDir so the loader tweak (which doesn't need a Context) can read states during plugin construction.
     val dataDir = appInfo.dataDir
 
-    with(RevengeBridgeRegistry) {
-        registerMethod("revenge.plugins.states.read") {
-            PluginStatesStore.ensureLoaded(dataDir).toMap()
-        }
-
-        registerMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
-            PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
-        }
+    pluginSystemMethod("revenge.plugins.states.read") {
+        PluginStatesStore.ensureLoaded(dataDir).toMap()
     }
-}
 
-enum class InternalPluginFlags {
-    INTERNAL,
-    ESSENTIAL,
-    ENABLED_BY_DEFAULT,
-    API,
+    pluginSystemMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
+        PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
+    }
 }
 
 /**
@@ -39,6 +28,9 @@ enum class InternalPluginFlags {
 enum class PluginFlags(val bit: Int = 0) {
     /** The plugin is enabled. */
     ENABLED(1 shl 0),
+
+    /** The plugin is explicitly enabled by the user. Any optional disablement should not disable this plugin */
+    REQUIRED_BY_USER(1 shl 1),
 
     /** The plugin requires a host reload to apply changes. */
     PENDING_RELOAD,
@@ -64,9 +56,6 @@ fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
     "startedLate" to (PluginFlags.STARTED_LATE in this),
 )
 
-/**
- * Persisted to `files/revenge/plugins/states`.
- */
 object PluginStatesStore {
     private const val DATA_DIR = "files/revenge/plugins"
     private const val STATES_FILE = "states"
@@ -81,7 +70,7 @@ object PluginStatesStore {
     /**
      * Read the states file as if it were empty, so only essential and enabled-by-default plugins run for one boot.
      *
-     * Reads are overlayed, writes hit the real states file, so the user can disable the problematic plugin.
+     * Reads are overlayed, but writes hit the real states file, so the user can disable problematic plugins.
      */
     @Volatile
     var defaultsOnly: Boolean = false
@@ -237,8 +226,9 @@ data class PluginsStates(
 
         fun loadFromFileOrNull(file: File, log: Logger): PluginsStates? {
             if (!file.exists() || file.length() <= 0L) return null
-            val atomic = AtomicFile(file)
+
             try {
+                val atomic = AtomicFile(file)
                 DataInputStream(BufferedInputStream(atomic.openRead())).use { input ->
                     when (val version = input.readInt()) {
                         1 -> return loadV1(input, file, log)
@@ -249,17 +239,17 @@ data class PluginsStates(
                 log.e(e.message ?: "Unsupported plugin states version")
             } catch (e: EOFException) {
                 log.e("Plugin states corrupt: ${e.message}")
-            } catch (e: IOException) {
-                log.e("Failed to read plugin states: ${e.message}")
             } catch (e: Exception) {
                 log.e("Unexpected error reading plugin states: ${e.message}")
             }
+
             runCatching {
                 file.renameTo(File(file.parentFile, "${file.name}.corrupt.${System.currentTimeMillis()}"))
             }.onFailure {
                 log.e("Failed to rename corrupt states file: ${it.message}")
                 file.delete()
             }
+
             return null
         }
 

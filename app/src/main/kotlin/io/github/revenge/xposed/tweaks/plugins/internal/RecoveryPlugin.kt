@@ -12,7 +12,6 @@ import io.github.revenge.reloadApp
 import io.github.revenge.xposed.RevengeConstants
 import io.github.revenge.xposed.api.registerNativeMethod
 import io.github.revenge.xposed.tweaks.RevengeUpdater
-import io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags
 import io.github.revenge.xposed.tweaks.plugins.PluginStatesStore
 import io.github.revenge.xposed.versionCode
 import io.github.revenge.xposed.versionName
