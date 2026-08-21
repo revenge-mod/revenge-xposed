@@ -2,6 +2,7 @@ package io.github.revenge.xposed.tweaks.plugins
 
 import android.util.AtomicFile
 import io.github.revenge.Logger
+import io.github.revenge.bridge.asDelegate
 import io.github.revenge.logger
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.tweak
@@ -19,6 +20,21 @@ val pluginStates by tweak {
 
     pluginSystemMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
         PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
+    }
+
+    /**
+     * `revenge.plugins.states.update(id, PluginStates): PluginStates`
+     *
+     * Updates the plugin states.
+     */
+    pluginSystemMethod("revenge.plugins.states.update") { args ->
+        val argv = args.asDelegate()
+        val pluginId by argv.string()
+        val states by argv.hashMap()
+
+        val newStates = pluginFlagsFromJSPayload(states)
+        persistState(pluginId, newStates)
+        newStates.toJSPayload()
     }
 }
 
@@ -52,6 +68,12 @@ fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> {
     val map = PluginFlags.entries.associate { it.jsName to (it in this) }
     // Add backwards compatibility here if needed
     return map
+}
+
+fun pluginFlagsFromJSPayload(payload: HashMap<String, Any?>): Set<PluginFlags> {
+    val set = PluginFlags.entries.filter { payload[it.jsName] == true }.toSet()
+    // Add backwards compatibility here if needed
+    return set
 }
 
 object PluginStatesStore {
