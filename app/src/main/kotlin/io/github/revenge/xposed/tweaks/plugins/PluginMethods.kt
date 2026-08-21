@@ -100,6 +100,7 @@ val pluginMethods by tweak {
         val argv = args.asDelegate()
         val pluginId by argv.string()
         val enabled by argv.boolean()
+        val requiredByUser by argv.booleanOrNull()
 
         val factory = pluginRegistry.factories[pluginId]
         val entry = pluginRegistry.loaded[pluginId]
@@ -113,11 +114,13 @@ val pluginMethods by tweak {
                 details = mapOf("problems" to problems),
             )
 
+            val requiredByUser = requiredByUser == true
+
             if (entry != null) {
-                entry.scope.flags.value += PluginFlags.ENABLED
+                entry.scope.flags.value += pluginEnablementFlags(requiredByUser)
             } else {
                 // Not loaded this session (or not managed natively)
-                enablePlugin(pluginId)
+                enablePlugin(pluginId, requiredByUser)
             }
         } else {
             // Note that essential plugins will be rejected by disablePlugin itself.

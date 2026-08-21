@@ -199,35 +199,47 @@ internal fun disablePlugin(pluginId: String) {
 
     PluginStatesStore.batchSave {
         for (id in toDisable) {
-            PluginStatesStore.states?.setPluginFlags(id, emptySet())
+            val plugin = loaded[id]
+            val currentFlags = plugin?.scope?.flags?.value ?: emptySet()
+            val newFlags = currentFlags.filter { it.persistAfterDisable }.toSet()
+            persistState(pluginId, newFlags)
+
             // Sync correct data to running instances to broadcast updates to JS as well.
-            loaded[id]?.let { it.scope.flags.value = emptySet() }
+            loaded[id]?.let { it.scope.flags.value = newFlags }
         }
     }
 
     stopPlugin(pluginId)
 }
 
-internal fun enablePlugin(pluginId: String) {
-    PluginStatesStore.states?.setPluginFlags(pluginId, setOf(PluginFlags.ENABLED))
-    PluginStatesStore.writeNow()
+internal fun pluginEnablementFlags(requiredByUser: Boolean) = buildSet {
+    add(PluginFlags.ENABLED)
+    if (requiredByUser) add(PluginFlags.REQUIRED_BY_USER)
 }
+
+internal fun enablePlugin(pluginId: String, requiredByUser: Boolean) =
+    persistState(pluginId, pluginEnablementFlags(requiredByUser))
 
 private fun isEssential(pluginId: String): Boolean =
     pluginRegistry.factories[pluginId]?.let { InternalPluginFlags.ESSENTIAL in it.internalFlags } ?: false
 
 private fun isPluginEnabled(pluginId: String, factory: PluginFactory?): Boolean {
     loaded[pluginId]?.let { return PluginFlags.ENABLED in it.scope.flags.value }
-    val states = PluginStatesStore.states
-    if (states?.isPluginEnabledInSaved(pluginId) == true) return true
+    val states = PluginStatesStore.states!!
+    if (states.isPluginEnabledInSaved(pluginId)) return true
     if (factory == null) return false
     return InternalPluginFlags.ESSENTIAL in factory.internalFlags ||
             (InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags &&
-                    states?.hasPluginInSaved(pluginId) != true)
+                    !states.hasPluginInSaved(pluginId))
+}
+
+internal fun persistState(pluginId: String, flags: Iterable<PluginFlags>) {
+    PluginStatesStore.states!!.setPluginFlags(pluginId, flags)
+    PluginStatesStore.writeNow()
 }
 
 internal fun clearPersistedState(pluginId: String) {
-    PluginStatesStore.states?.removePlugin(pluginId)
+    PluginStatesStore.states!!.removePlugin(pluginId)
     PluginStatesStore.writeNow()
 }
 

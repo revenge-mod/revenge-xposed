@@ -25,18 +25,18 @@ val pluginStates by tweak {
 /**
  * Lifecycle flags. Flags with bits can be persisted.
  */
-enum class PluginFlags(val bit: Int = 0) {
+enum class PluginFlags(val bit: Int = 0, val jsName: String, val persistAfterDisable: Boolean = false) {
     /** The plugin is enabled. */
-    ENABLED(1 shl 0),
+    ENABLED(1 shl 0, "enabled"),
 
     /** The plugin is explicitly enabled by the user. Any optional disablement should not disable this plugin */
-    REQUIRED_BY_USER(1 shl 1),
+    REQUIRED_BY_USER(1 shl 1, "requiredByUser"),
 
     /** The plugin requires a host reload to apply changes. */
-    PENDING_RELOAD,
+    PENDING_RELOAD(jsName = "pendingReload", persistAfterDisable = true),
 
     /** The plugin was enabled *after* the initial load (e.g. user-toggled at runtime). */
-    STARTED_LATE,
+    STARTED_LATE(jsName = "startedLate"),
 }
 
 fun pluginFlagsFromBitmask(mask: Int): Set<PluginFlags> =
@@ -48,13 +48,11 @@ fun Iterable<PluginFlags>.toBitmask(): Int {
     return m
 }
 
-fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
-    "enabled" to (PluginFlags.ENABLED in this),
-    "pendingReload" to (PluginFlags.PENDING_RELOAD in this),
-    // @TODO: (2026-07-26) Remove this in a month's time.
-    "enabledLate" to (PluginFlags.STARTED_LATE in this),
-    "startedLate" to (PluginFlags.STARTED_LATE in this),
-)
+fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> {
+    val map = PluginFlags.entries.associate { it.jsName to (it in this) }
+    // Add backwards compatibility here if needed
+    return map
+}
 
 object PluginStatesStore {
     private const val DATA_DIR = "files/revenge/plugins"
