@@ -3,6 +3,7 @@ package io.github.revenge.xposed.tweaks.plugins
 import io.github.revenge.xposed.api.HostScope
 import io.github.revenge.xposed.api.registerNativeAsyncMethod
 import io.github.revenge.xposed.api.registerNativeMethod
+import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry.toNativeObject
 
 internal object PluginErrorCodes {
     const val MANIFEST_INVALID = "MANIFEST_INVALID"
@@ -67,7 +68,7 @@ internal fun Throwable.toPluginError(fallbackCode: String): PluginError = Plugin
 
 // We ensure JS always receives a "successful bridge call" with `{ result | error }`, so enough details can be given.
 
-internal fun Any?.toJSPayload(): Map<String, Any?> = mapOf("result" to this)
+internal fun Any?.toJSPayload(): Map<String, Any?> = mapOf("result" to this?.toNativeObject())
 
 internal fun Throwable.toJSPayload(): Map<String, Any?> {
     // Arg delegates and require() throw IllegalArgumentException, this is likely JS' fault.
