@@ -180,7 +180,7 @@ val pluginInstallMethods by tweak {
             for (factory in result.fresh) {
                 pluginRegistry.add(factory)
                 // Default state for fresh installs.
-                clearPersistedState(factory.manifest.id)
+                clearSavedFlags(factory.manifest.id)
                 runCatching {
                     callJSMethod(
                         PluginEvents.PLUGIN_INSTALL_RESULT,
@@ -263,7 +263,7 @@ private fun handleInstallResult(result: InstallResult) {
             val factory = result.factory
             pluginRegistry.add(factory)
             // Default states for fresh installs.
-            clearPersistedState(factory.manifest.id)
+            clearSavedFlags(factory.manifest.id)
             val source = PluginSource(repo = null)
             runCatching { SourcesStore.set(factory.manifest.id, source) }
                 .onFailure { pluginLog.e("Failed to record plugin source", it) }

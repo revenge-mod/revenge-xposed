@@ -79,7 +79,7 @@ internal fun loadPlugin(
     val manifest = factory.manifest
 
     val plugin = factory.builder.build(manifest)
-    val flags = MutableStateFlow(PluginStatesStore.loadPluginFlags(manifest.id) ?: emptySet())
+    val flags = MutableStateFlow(PluginStatesStore.bootFlags(manifest.id) ?: emptySet())
 
     // Turn on plugins that are essential or on by default, unless a saved flag already says so.
     if (
@@ -96,14 +96,8 @@ internal fun loadPlugin(
 
     // `drop(1)` skips the initial load so we don't re-persist the values we just loaded.
     val persistJob = flags.drop(1).onEach { newFlags ->
-        PluginStatesStore.updatePluginFlags(manifest, newFlags)
-
-        runCatching {
-            host.callJSMethod(
-                "revenge.plugins.states.update",
-                listOf(manifest.id, newFlags.toJSPayload())
-            )
-        }
+        PluginStatesStore.writeSessionFlags(manifest.id, newFlags)
+        sendSessionStateToJS(manifest.id, newFlags)
     }.launchIn(pluginJobScope)
 
     val errorSyncJob = scope.errors.onEach {
@@ -128,6 +122,7 @@ internal fun loadPlugin(
 }
 
 /** Stops a running plugin, taking every dependent that's linked to it down first. */
+context(host: HostScope)
 internal fun stopPlugin(pluginId: String) {
     if (pluginId !in loaded) return
 
@@ -155,6 +150,9 @@ internal fun stopPlugin(pluginId: String) {
         entry.scope.errors.tryEmit(e)
         pluginLog.e("Plugin $pluginId threw in stop()", e)
     } finally {
+        // stop() may have changed flags (requireReload), we need to sync before stopping the job.
+        dispatchSessionStateToJS(pluginId, entry.scope.flags.value)
+
         entry.persistJob.cancel()
         entry.errorSyncJob.cancel()
     }
@@ -166,6 +164,7 @@ internal fun stopPlugin(pluginId: String) {
  *
  * Throws when the plugin is essential.
  */
+context(host: HostScope)
 internal fun disablePlugin(pluginId: String) {
     if (isEssential(pluginId)) throw PluginSystemError(
         PluginErrorCodes.NOT_ALLOWED,
@@ -202,7 +201,7 @@ internal fun disablePlugin(pluginId: String) {
             val plugin = loaded[id]
             val currentFlags = plugin?.scope?.flags?.value ?: emptySet()
             val newFlags = currentFlags.filter { it.persistAfterDisable }.toSet()
-            persistState(pluginId, newFlags)
+            updateSavedFlags(id, newFlags)
 
             // Sync correct data to running instances to broadcast updates to JS as well.
             loaded[id]?.let { it.scope.flags.value = newFlags }
@@ -217,8 +216,9 @@ internal fun pluginEnablementFlags(requiredByUser: Boolean) = buildSet {
     if (requiredByUser) add(PluginFlags.REQUIRED_BY_USER)
 }
 
+context(host: HostScope)
 internal fun enablePlugin(pluginId: String, requiredByUser: Boolean) =
-    persistState(pluginId, pluginEnablementFlags(requiredByUser))
+    updateSavedFlags(pluginId, pluginEnablementFlags(requiredByUser))
 
 private fun isEssential(pluginId: String): Boolean =
     pluginRegistry.factories[pluginId]?.let { InternalPluginFlags.ESSENTIAL in it.internalFlags } ?: false
@@ -233,15 +233,15 @@ private fun isPluginEnabled(pluginId: String, factory: PluginFactory?): Boolean 
                     !states.hasPluginInSaved(pluginId))
 }
 
-internal fun persistState(pluginId: String, flags: Iterable<PluginFlags>) {
-    PluginStatesStore.states!!.setPluginFlags(pluginId, flags)
-    PluginStatesStore.writeNow()
+/** Updates the saved states, which is what applies on the next boot, and notifies JS. */
+context(host: HostScope)
+internal fun updateSavedFlags(pluginId: String, flags: Iterable<PluginFlags>) {
+    val newFlags = flags.toSet()
+    PluginStatesStore.writeSavedFlags(pluginId, newFlags)
+    dispatchSavedStateToJS(pluginId, newFlags)
 }
 
-internal fun clearPersistedState(pluginId: String) {
-    PluginStatesStore.states!!.removePlugin(pluginId)
-    PluginStatesStore.writeNow()
-}
+internal fun clearSavedFlags(pluginId: String) = PluginStatesStore.removeSavedFlags(pluginId)
 
 internal fun unsatisfiedDependenciesMessage(pluginId: String, problems: List<Map<String, Any?>>): String {
     val details = problems.joinToString(", ") { p ->

@@ -88,7 +88,7 @@ val pluginMethods by tweak {
         File(externalPluginsRoot(appInfo.dataDir), pluginId).deleteRecursively()
         File(pluginStorageRoot(appInfo.dataDir), pluginId).deleteRecursively()
 
-        clearPersistedState(pluginId)
+        clearSavedFlags(pluginId)
         runCatching { SourcesStore.remove(pluginId) }
             .onFailure { pluginLog.e("Failed to remove plugin source for $pluginId", it) }
 
@@ -116,12 +116,10 @@ val pluginMethods by tweak {
 
             val requiredByUser = requiredByUser == true
 
-            if (entry != null) {
-                entry.scope.flags.value += pluginEnablementFlags(requiredByUser)
-            } else {
-                // Not loaded this session (or not managed natively)
-                enablePlugin(pluginId, requiredByUser)
-            }
+            // Emitting here in defaults-only boot only enables the plugin in-session and won't persist the flag,
+            entry?.let { it.scope.flags.value += pluginEnablementFlags(requiredByUser) }
+            // So we also explicitly save here.
+            enablePlugin(pluginId, requiredByUser)
         } else {
             // Note that essential plugins will be rejected by disablePlugin itself.
             // Required dependents get automatically disabled with it, linked optionals just stop.

@@ -20,7 +20,7 @@ val pluginLoader by tweak {
     // They can run once the issues are resolved (e.g. loader/plugin/Discord update).
     for ((id, failure) in discovery.failures) {
         // Prefer the validated manifest's ID, since [id] could be a directory name instead.
-        if (failure.isPluginFault) clearPersistedState(failure.manifest?.id ?: id)
+        if (failure.isPluginFault) clearSavedFlags(failure.manifest?.id ?: id)
     }
 
     for (factory in internalPlugins + external) pluginRegistry.add(factory)
@@ -35,9 +35,9 @@ val pluginLoader by tweak {
                 val essential = InternalPluginFlags.ESSENTIAL in factory.internalFlags
                 val enabledByDefault = InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags
 
-                val shouldLoad = states.isPluginEnabled(manifest.id) ||
+                val shouldLoad = states.isPluginEnabledThisBoot(manifest.id) ||
                         essential ||
-                        (enabledByDefault && !states.hasPlugin(manifest.id))
+                        (enabledByDefault && !states.hasPluginThisBoot(manifest.id))
 
                 if (!shouldLoad) {
                     pluginLog.i("Skipping disabled plugin: ${manifest.id}")

@@ -4,12 +4,18 @@ import android.util.AtomicFile
 import io.github.revenge.Logger
 import io.github.revenge.bridge.asDelegate
 import io.github.revenge.logger
-import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.tweak
 import java.io.*
 
 /**
  * Plugin-state persistence + exposes `revenge.plugins.states.*` bridge methods.
+ *
+ * Two things are tracked separately:
+ * - saved: what is on disk, and what applies on the next boot. The UI edits this.
+ * - session: what is true for the plugins running right now.
+ *
+ * On a normal boot they are the same thing. During a defaults-only boot the session runs on defaults.
+ * Each states have different write and notifier functions.
  */
 val pluginStates by tweak {
     val dataDir = appInfo.dataDir
@@ -25,7 +31,7 @@ val pluginStates by tweak {
     /**
      * `revenge.plugins.states.update(id, PluginStates): PluginStates`
      *
-     * Updates the plugin states.
+     * Updates the session plugin states.
      */
     pluginSystemMethod("revenge.plugins.states.update") { args ->
         val argv = args.asDelegate()
@@ -33,7 +39,7 @@ val pluginStates by tweak {
         val states by argv.hashMap()
 
         val newStates = pluginFlagsFromJSPayload(states)
-        persistState(pluginId, newStates)
+        PluginStatesStore.writeSessionFlags(pluginId, newStates)
         newStates.toJSPayload()
     }
 }
@@ -90,7 +96,7 @@ object PluginStatesStore {
     /**
      * Read the states file as if it were empty, so only essential and enabled-by-default plugins run for one boot.
      *
-     * Reads are overlayed, but writes hit the real states file, so the user can disable problematic plugins.
+     * Only session reads are overlayed. Saved states are still readable/writable, so the user can edit it and fix problems.
      */
     @Volatile
     var defaultsOnly: Boolean = false
@@ -144,9 +150,24 @@ object PluginStatesStore {
         }
     }
 
-    fun updatePluginFlags(manifest: PluginManifest, flags: Set<PluginFlags>) {
+    fun writeSavedFlags(pluginId: String, flags: Set<PluginFlags>) {
         val s = states ?: return
-        s.setPluginFlags(manifest.id, flags)
+        s.setPluginFlags(pluginId, flags)
+        writeNow()
+    }
+
+    /**
+     * Copies a running plugin's flags into the saved setup.
+     * Does nothing in defaults-only boot, as session flags is different to saved there.
+     */
+    fun writeSessionFlags(pluginId: String, flags: Set<PluginFlags>) {
+        if (defaultsOnly) return
+        writeSavedFlags(pluginId, flags)
+    }
+
+    fun removeSavedFlags(pluginId: String) {
+        val s = states ?: return
+        s.removePlugin(pluginId)
         writeNow()
     }
 
@@ -160,8 +181,11 @@ object PluginStatesStore {
         }
     }
 
-    /** Persisted flags for a plugin, or `null` if none were saved. */
-    fun loadPluginFlags(pluginId: String): Set<PluginFlags>? {
+    /**
+     * Flags a plugin starts this boot with, or `null` when nothing applies.
+     * Always `null` during a defaults-only boot, so every plugin falls back to its defaults.
+     */
+    fun bootFlags(pluginId: String): Set<PluginFlags>? {
         if (defaultsOnly) return null
         val s = states ?: return null
         val savedFlags = s.flags[pluginId]?.toInt() ?: return null
@@ -178,13 +202,15 @@ data class PluginsStates(
 ) {
     val flags: MutableMap<String, Double> = flagsData.toMutableMap()
 
+    /** Enabled for this boot. Returns false for everything during a defaults-only boot. */
     @Synchronized
-    fun isPluginEnabled(pluginId: String): Boolean {
+    fun isPluginEnabledThisBoot(pluginId: String): Boolean {
         return !PluginStatesStore.defaultsOnly && isPluginEnabledInSaved(pluginId)
     }
 
+    /** Has an entry for this boot. Returns false for everything during a defaults-only boot. */
     @Synchronized
-    fun hasPlugin(pluginId: String): Boolean {
+    fun hasPluginThisBoot(pluginId: String): Boolean {
         return !PluginStatesStore.defaultsOnly && hasPluginInSaved(pluginId)
     }
 
@@ -195,7 +221,7 @@ data class PluginsStates(
         return (pf and PluginFlags.ENABLED.bit) != 0
     }
 
-    /** Saved in the user's setup, ignoring the defaults-only overlay. */
+    /** Has an entry in the user's saved setup, ignoring the defaults-only overlay. */
     @Synchronized
     fun hasPluginInSaved(pluginId: String): Boolean = flags.containsKey(pluginId)
 
@@ -233,11 +259,11 @@ data class PluginsStates(
     fun toMap(): Map<String, Any> = buildMap {
         val saved = flags.mapValues { pluginFlagsFromBitmask(it.value.toInt()).toJSPayload() }
 
-        // Empty in defaults-only so JS uses its defaults and runs nothing extra.
+        // Session states. Empty in defaults-only so JS uses its defaults and runs nothing extra.
         put("states", if (PluginStatesStore.defaultsOnly) emptyMap<String, Any>() else saved)
 
-        // The real saved states sent only when running defaults-only,
-        // so the UI can show and edit what actually applies on the next reload.
+        // Saved states, sent only when it differs from the session,
+        // so the UI shows and edits the correct data while the session runs on defaults.
         if (PluginStatesStore.defaultsOnly) put("savedStates", saved)
     }
 
