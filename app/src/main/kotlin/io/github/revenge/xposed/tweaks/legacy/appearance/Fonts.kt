@@ -8,8 +8,6 @@ import android.graphics.Typeface.CustomFallbackBuilder
 import android.graphics.fonts.Font
 import android.graphics.fonts.FontFamily
 import android.os.Build
-import de.robv.android.xposed.XC_MethodReplacement
-import de.robv.android.xposed.XposedHelpers
 import io.github.revenge.Logger
 import io.github.revenge.xposed.*
 import io.github.revenge.xposed.tweaks.legacy.RevengePayloadBuilder
@@ -40,22 +38,23 @@ val fonts by tweak {
     RevengePayloadBuilder.contribute { put("fontPatch", 2) }
 
     // ReactFontManager hijack runs regardless of fonts.json presence  it falls back to the default Typeface chain if no custom font file is found.
-    XposedHelpers.findAndHookMethod(
-        $$"com.facebook.react.views.text.ReactFontManager$Companion",
-        classLoader,
-        "createAssetTypeface",
-        String::class.java,
-        Int::class.java,
-        "android.content.res.AssetManager",
-        object : XC_MethodReplacement() {
-            override fun replaceHookedMethod(param: MethodHookParam): Typeface? {
-                val fontFamilyName: String = param.args[0].toString()
-                val style: Int = param.args[1] as Int
-                val assetManager: AssetManager = param.args[2] as AssetManager
-                return FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
+    listOf(
+        "com.facebook.react.common.assets.ReactFontManager\$Companion",
+        "com.facebook.react.views.text.ReactFontManager\$Companion",
+    ).forEach { clsName ->
+        classLoader.loadClassOrNull(clsName)?.let { cls ->
+            runCatching {
+                cls.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
+                    before {
+                        val fontFamilyName: String = args[0].toString()
+                        val style: Int = args[1] as Int
+                        val assetManager: AssetManager = args[2] as AssetManager
+                        result = FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
+                    }
+                }
             }
-        },
-    )
+        }
+    }
 
     withAppContext { ctx ->
         val dataDir = ctx.dataDir.absolutePath
