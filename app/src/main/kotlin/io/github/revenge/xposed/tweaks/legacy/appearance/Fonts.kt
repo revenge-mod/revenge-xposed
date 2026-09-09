@@ -41,7 +41,7 @@ val fonts by tweak {
     val clazz = classLoader.loadClassOrNull($$"com.facebook.react.common.assets.ReactFontManager$Companion")
         ?: classLoader.loadClassOrNull($$"com.facebook.react.views.text.ReactFontManager$Companion")
     
-    clazz.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
+    clazz!!.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
         before {
             val fontFamilyName: String = args[0].toString()
             val style: Int = args[1] as Int
