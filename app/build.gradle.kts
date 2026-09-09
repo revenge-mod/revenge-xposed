@@ -11,8 +11,8 @@ android {
         applicationId = "io.github.revenge.xposed"
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
-        versionCode = 1602
-        versionName = "1.6.2"
+        versionCode = 1603
+        versionName = "1.6.3"
     }
 
     sourceSets {
