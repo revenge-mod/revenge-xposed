@@ -38,21 +38,15 @@ val fonts by tweak {
     RevengePayloadBuilder.contribute { put("fontPatch", 2) }
 
     // ReactFontManager hijack runs regardless of fonts.json presence  it falls back to the default Typeface chain if no custom font file is found.
-    listOf(
-        "com.facebook.react.common.assets.ReactFontManager\$Companion",
-        "com.facebook.react.views.text.ReactFontManager\$Companion",
-    ).forEach { clsName ->
-        classLoader.loadClassOrNull(clsName)?.let { cls ->
-            runCatching {
-                cls.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
-                    before {
-                        val fontFamilyName: String = args[0].toString()
-                        val style: Int = args[1] as Int
-                        val assetManager: AssetManager = args[2] as AssetManager
-                        result = FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
-                    }
-                }
-            }
+    val clazz = classLoader.loadClassOrNull($$"com.facebook.react.common.assets.ReactFontManager$Companion")
+        ?: classLoader.loadClassOrNull($$"com.facebook.react.views.text.ReactFontManager$Companion")
+    
+    clazz.method("createAssetTypeface", String::class.java, Int::class.java, AssetManager::class.java).hook {
+        before {
+            val fontFamilyName: String = args[0].toString()
+            val style: Int = args[1] as Int
+            val assetManager: AssetManager = args[2] as AssetManager
+            result = FontsState.createAssetTypeface(fontFamilyName, style, assetManager)
         }
     }
 
