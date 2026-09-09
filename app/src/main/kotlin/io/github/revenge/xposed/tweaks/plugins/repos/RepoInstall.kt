@@ -183,6 +183,8 @@ private suspend fun downloadAndVerify(
     onReceived: (Long) -> Unit,
 ): ByteArray {
     val response = client.get(action.url) {
+        // expectSuccess true (our defaults) would throw on 3xx instead of following the redirect.
+        expectSuccess = false
         timeout { requestTimeoutMillis = DOWNLOAD_TIMEOUT }
         onDownload { received, _ -> onReceived(received) }
     }
