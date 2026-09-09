@@ -1,5 +1,8 @@
-package io.github.revenge.xposed.tweaks.plugins
+package io.github.revenge.xposed.tweaks.plugins.external
 
+
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -48,7 +51,7 @@ class ExtractPluginZipTest {
 
     @Test
     fun `a ZIP without a manifest fails with a clear message without extracting`() {
-        val e = assertFailsWith<PluginException> {
+        val e = assertFailsWith<PluginSystemError> {
             extractPluginZip(zipOf("readme.txt" to "hello"), root, ".test")
         }
 
@@ -59,7 +62,7 @@ class ExtractPluginZipTest {
 
     @Test
     fun `an invalid manifest aborts before anything is extracted and leaves root clean`() {
-        val e = assertFailsWith<PluginException> {
+        val e = assertFailsWith<PluginSystemError> {
             extractPluginZip(zipOf("manifest.json" to "{}", "index.js" to "code"), root, ".test")
         }
 

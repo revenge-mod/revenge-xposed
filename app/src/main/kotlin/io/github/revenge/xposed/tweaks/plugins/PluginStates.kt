@@ -2,49 +2,63 @@ package io.github.revenge.xposed.tweaks.plugins
 
 import android.util.AtomicFile
 import io.github.revenge.Logger
+import io.github.revenge.bridge.asDelegate
 import io.github.revenge.logger
-import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.bridge.RevengeBridgeRegistry
 import java.io.*
 
 /**
  * Plugin-state persistence + exposes `revenge.plugins.states.*` bridge methods.
+ *
+ * Two things are tracked separately:
+ * - saved: what is on disk, and what applies on the next boot. The UI edits this.
+ * - session: what is true for the plugins running right now.
+ *
+ * On a normal boot they are the same thing. During a defaults-only boot the session runs on defaults.
+ * Each states have different write and notifier functions.
  */
 val pluginStates by tweak {
-    // Load eagerly using appInfo.dataDir so the loader tweak (which doesn't need a Context) can read states during plugin construction.
     val dataDir = appInfo.dataDir
 
-    with(RevengeBridgeRegistry) {
-        registerMethod("revenge.plugins.states.read") {
-            PluginStatesStore.ensureLoaded(dataDir).toMap()
-        }
-
-        registerMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
-            PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
-        }
+    pluginSystemMethod("revenge.plugins.states.read") {
+        PluginStatesStore.ensureLoaded(dataDir).toMap()
     }
-}
 
-enum class InternalPluginFlags {
-    INTERNAL,
-    ESSENTIAL,
-    ENABLED_BY_DEFAULT,
-    API,
+    pluginSystemMethod("revenge.plugins.states.requestNextBootDefaultsOnly") {
+        PluginStatesStore.requestDefaultsOnlyBoot(dataDir)
+    }
+
+    /**
+     * `revenge.plugins.states.update(id, PluginStates): PluginStates`
+     *
+     * Updates the session plugin states.
+     */
+    pluginSystemMethod("revenge.plugins.states.update") { args ->
+        val argv = args.asDelegate()
+        val pluginId by argv.string()
+        val states by argv.hashMap()
+
+        val newStates = pluginFlagsFromJSPayload(states)
+        PluginStatesStore.writeSessionFlags(pluginId, newStates)
+        newStates.toJSPayload()
+    }
 }
 
 /**
  * Lifecycle flags. Flags with bits can be persisted.
  */
-enum class PluginFlags(val bit: Int = 0) {
+enum class PluginFlags(val bit: Int = 0, val jsName: String, val persistAfterDisable: Boolean = false) {
     /** The plugin is enabled. */
-    ENABLED(1 shl 0),
+    ENABLED(1 shl 0, "enabled"),
+
+    /** The plugin is explicitly enabled by the user. Any optional disablement should not disable this plugin */
+    REQUIRED_BY_USER(1 shl 1, "requiredByUser"),
 
     /** The plugin requires a host reload to apply changes. */
-    PENDING_RELOAD,
+    PENDING_RELOAD(jsName = "pendingReload", persistAfterDisable = true),
 
     /** The plugin was enabled *after* the initial load (e.g. user-toggled at runtime). */
-    STARTED_LATE,
+    STARTED_LATE(jsName = "startedLate"),
 }
 
 fun pluginFlagsFromBitmask(mask: Int): Set<PluginFlags> =
@@ -56,17 +70,18 @@ fun Iterable<PluginFlags>.toBitmask(): Int {
     return m
 }
 
-fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> = mapOf(
-    "enabled" to (PluginFlags.ENABLED in this),
-    "pendingReload" to (PluginFlags.PENDING_RELOAD in this),
-    // @TODO: (2026-07-26) Remove this in a month's time.
-    "enabledLate" to (PluginFlags.STARTED_LATE in this),
-    "startedLate" to (PluginFlags.STARTED_LATE in this),
-)
+fun Set<PluginFlags>.toJSPayload(): Map<String, Boolean> {
+    val map = PluginFlags.entries.associate { it.jsName to (it in this) }
+    // Add backwards compatibility here if needed
+    return map
+}
 
-/**
- * Persisted to `files/revenge/plugins/states`.
- */
+fun pluginFlagsFromJSPayload(payload: HashMap<String, Any?>): Set<PluginFlags> {
+    val set = PluginFlags.entries.filter { payload[it.jsName] == true }.toSet()
+    // Add backwards compatibility here if needed
+    return set
+}
+
 object PluginStatesStore {
     private const val DATA_DIR = "files/revenge/plugins"
     private const val STATES_FILE = "states"
@@ -81,7 +96,7 @@ object PluginStatesStore {
     /**
      * Read the states file as if it were empty, so only essential and enabled-by-default plugins run for one boot.
      *
-     * Reads are overlayed, writes hit the real states file, so the user can disable the problematic plugin.
+     * Only session reads are overlayed. Saved states are still readable/writable, so the user can edit it and fix problems.
      */
     @Volatile
     var defaultsOnly: Boolean = false
@@ -135,9 +150,24 @@ object PluginStatesStore {
         }
     }
 
-    fun updatePluginFlags(manifest: PluginManifest, flags: Set<PluginFlags>) {
+    fun writeSavedFlags(pluginId: String, flags: Set<PluginFlags>) {
         val s = states ?: return
-        s.setPluginFlags(manifest.id, flags)
+        s.setPluginFlags(pluginId, flags)
+        writeNow()
+    }
+
+    /**
+     * Copies a running plugin's flags into the saved setup.
+     * Does nothing in defaults-only boot, as session flags is different to saved there.
+     */
+    fun writeSessionFlags(pluginId: String, flags: Set<PluginFlags>) {
+        if (defaultsOnly) return
+        writeSavedFlags(pluginId, flags)
+    }
+
+    fun removeSavedFlags(pluginId: String) {
+        val s = states ?: return
+        s.removePlugin(pluginId)
         writeNow()
     }
 
@@ -151,8 +181,11 @@ object PluginStatesStore {
         }
     }
 
-    /** Persisted flags for a plugin, or `null` if none were saved. */
-    fun loadPluginFlags(pluginId: String): Set<PluginFlags>? {
+    /**
+     * Flags a plugin starts this boot with, or `null` when nothing applies.
+     * Always `null` during a defaults-only boot, so every plugin falls back to its defaults.
+     */
+    fun bootFlags(pluginId: String): Set<PluginFlags>? {
         if (defaultsOnly) return null
         val s = states ?: return null
         val savedFlags = s.flags[pluginId]?.toInt() ?: return null
@@ -169,13 +202,15 @@ data class PluginsStates(
 ) {
     val flags: MutableMap<String, Double> = flagsData.toMutableMap()
 
+    /** Enabled for this boot. Returns false for everything during a defaults-only boot. */
     @Synchronized
-    fun isPluginEnabled(pluginId: String): Boolean {
+    fun isPluginEnabledThisBoot(pluginId: String): Boolean {
         return !PluginStatesStore.defaultsOnly && isPluginEnabledInSaved(pluginId)
     }
 
+    /** Has an entry for this boot. Returns false for everything during a defaults-only boot. */
     @Synchronized
-    fun hasPlugin(pluginId: String): Boolean {
+    fun hasPluginThisBoot(pluginId: String): Boolean {
         return !PluginStatesStore.defaultsOnly && hasPluginInSaved(pluginId)
     }
 
@@ -186,7 +221,7 @@ data class PluginsStates(
         return (pf and PluginFlags.ENABLED.bit) != 0
     }
 
-    /** Saved in the user's setup, ignoring the defaults-only overlay. */
+    /** Has an entry in the user's saved setup, ignoring the defaults-only overlay. */
     @Synchronized
     fun hasPluginInSaved(pluginId: String): Boolean = flags.containsKey(pluginId)
 
@@ -224,11 +259,11 @@ data class PluginsStates(
     fun toMap(): Map<String, Any> = buildMap {
         val saved = flags.mapValues { pluginFlagsFromBitmask(it.value.toInt()).toJSPayload() }
 
-        // Empty in defaults-only so JS uses its defaults and runs nothing extra.
+        // Session states. Empty in defaults-only so JS uses its defaults and runs nothing extra.
         put("states", if (PluginStatesStore.defaultsOnly) emptyMap<String, Any>() else saved)
 
-        // The real saved states sent only when running defaults-only,
-        // so the UI can show and edit what actually applies on the next reload.
+        // Saved states, sent only when it differs from the session,
+        // so the UI shows and edits the correct data while the session runs on defaults.
         if (PluginStatesStore.defaultsOnly) put("savedStates", saved)
     }
 
@@ -237,8 +272,9 @@ data class PluginsStates(
 
         fun loadFromFileOrNull(file: File, log: Logger): PluginsStates? {
             if (!file.exists() || file.length() <= 0L) return null
-            val atomic = AtomicFile(file)
+
             try {
+                val atomic = AtomicFile(file)
                 DataInputStream(BufferedInputStream(atomic.openRead())).use { input ->
                     when (val version = input.readInt()) {
                         1 -> return loadV1(input, file, log)
@@ -249,17 +285,17 @@ data class PluginsStates(
                 log.e(e.message ?: "Unsupported plugin states version")
             } catch (e: EOFException) {
                 log.e("Plugin states corrupt: ${e.message}")
-            } catch (e: IOException) {
-                log.e("Failed to read plugin states: ${e.message}")
             } catch (e: Exception) {
                 log.e("Unexpected error reading plugin states: ${e.message}")
             }
+
             runCatching {
                 file.renameTo(File(file.parentFile, "${file.name}.corrupt.${System.currentTimeMillis()}"))
             }.onFailure {
                 log.e("Failed to rename corrupt states file: ${it.message}")
                 file.delete()
             }
+
             return null
         }
 

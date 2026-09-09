@@ -1,28 +1,20 @@
 package io.github.revenge.xposed.tweaks.plugins.repos
 
 import io.github.revenge.plugins.PluginManifest
-import io.github.revenge.xposed.api.registerNativeAsyncMethod
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.plugins.EVENT_REPO_STATE_UPDATE
-import io.github.revenge.xposed.tweaks.plugins.emitPluginEvent
+import io.github.revenge.xposed.tweaks.plugins.*
 import io.github.revenge.xposed.tweaks.plugins.internal.internalPlugins
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 
 internal sealed class RepoState(val value: String) {
-    /** The repository is ready to be browsed. */
     object Ready : RepoState("ready")
 
-    /** The repository is being refreshed. */
     object Refreshing : RepoState("refreshing")
 
-    /** The repository failed to refresh. */
     class Error(val errorMessage: String) : RepoState("error")
 }
 
 /**
- * Repository management: exposes `revenge.plugins.repos.*` bridge methods.
+ * Repository management `revenge.plugins.repos.*` bridge methods.
  *
  * Auto-updates are triggered JS-side. JS can choose to refresh all repos, then check for updates and install them.
  * The native side only provides the repository list and cached indexes.
@@ -32,9 +24,8 @@ val pluginRepos by tweak {
     RepoStore.ensureLoaded(dataDir)
     SourcesStore.ensureLoaded(dataDir)
 
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     fun emitRepoState(url: String, state: RepoState) = emitPluginEvent(
-        scope, log, EVENT_REPO_STATE_UPDATE,
+        PluginEvents.REPO_STATE_UPDATE,
         buildMap {
             put("url", url)
             put("state", state.value)
@@ -45,18 +36,18 @@ val pluginRepos by tweak {
     /**
      * `revenge.plugins.repos.list() -> Repo[]`
      *
-     * The internal repository is always first (priority 0), followed by user repositories in priority order.
+     * The internal repository is always first, followed by user repositories in priority order.
      * Display metadata comes from cached indexes.
      */
-    registerNativeAsyncMethod("revenge.plugins.repos.list") {
+    pluginSystemAsyncMethod("revenge.plugins.repos.list") {
         buildList {
             add(internalRepoJSPayload())
-            for (repo in RepoStore.list()) {
-                val index = RepoStore.cachedIndex(repo.url)
+            for ((url, enabled) in RepoStore.list()) {
+                val index = RepoStore.cachedIndex(url)
                 add(
                     mapOf(
-                        "url" to repo.url,
-                        "enabled" to repo.enabled,
+                        "url" to url,
+                        "enabled" to enabled,
                         "internal" to false,
                         "name" to index?.name,
                         "description" to index?.description,
@@ -72,13 +63,15 @@ val pluginRepos by tweak {
      *
      * Replaces the whole user repository list. Array order is priority order.
      */
-    registerNativeAsyncMethod("revenge.plugins.repos.set") { args ->
+    pluginSystemAsyncMethod("revenge.plugins.repos.set") { args ->
         val config = args.firstOrNull() as? List<*>
-            ?: throw Error("Expected a config array of { url, enabled }")
+            ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a config array of { url, enabled }")
 
         val entries = config.map { entry ->
-            val map = entry as? Map<*, *> ?: throw Error("Expected { url, enabled } objects")
-            val url = map["url"] as? String ?: throw Error("Repository entry is missing 'url'")
+            val map = entry as? Map<*, *>
+                ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected { url, enabled } objects")
+            val url = map["url"] as? String
+                ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Repository entry is missing 'url'")
             val enabled = map["enabled"] as? Boolean ?: true
             UserRepo(url = url, enabled = enabled)
         }
@@ -90,12 +83,15 @@ val pluginRepos by tweak {
     /**
      * `revenge.plugins.repos.refresh(url) -> Repo`
      *
-     * Refreshes one repository's cached index.
-     * Failures leave cache unmodified and throws as a bridge error.
+     * Refreshes a repository's cached index. Failures won't modify existing cache and fails the bridge call.
      */
-    registerNativeAsyncMethod("revenge.plugins.repos.refresh") { args ->
-        val url = args.firstOrNull() as? String ?: throw Error("Expected a repository URL")
-        require(url != INTERNAL_REPO_URL) { "The internal repository cannot be refreshed" }
+    pluginSystemAsyncMethod("revenge.plugins.repos.refresh") { args ->
+        val url = args.firstOrNull() as? String
+            ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a repository URL")
+        if (url == INTERNAL_REPO_URL) throw PluginSystemError(
+            PluginErrorCodes.NOT_ALLOWED,
+            "The internal repository cannot be refreshed"
+        )
 
         emitRepoState(url, RepoState.Refreshing)
         val index = try {
@@ -120,17 +116,20 @@ val pluginRepos by tweak {
     /**
      * `revenge.plugins.repos.listPlugins(url) -> RepoPluginListing[]`
      *
-     * Lists one repository's plugins from its cached index.
-     * Internal plugins are served with no artifacts.
+     * Lists one repository's plugins from its cached index. Internal plugins are served with no artifacts.
      */
-    registerNativeAsyncMethod("revenge.plugins.repos.listPlugins") { args ->
-        val url = args.firstOrNull() as? String ?: throw Error("Expected a repository URL")
+    pluginSystemAsyncMethod("revenge.plugins.repos.listPlugins") { args ->
+        val url = args.firstOrNull() as? String
+            ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a repository URL")
 
-        if (url == INTERNAL_REPO_URL) return@registerNativeAsyncMethod internalRepoPluginsJSPayload()
+        if (url == INTERNAL_REPO_URL) return@pluginSystemAsyncMethod internalRepoPluginsJSPayload()
 
-        require(RepoStore.list().any { it.url == url }) { "Unknown repository: '$url'" }
+        if (RepoStore.list().none { it.url == url }) throw PluginSystemError(
+            PluginErrorCodes.NOT_FOUND,
+            "Unknown repository: '$url'"
+        )
         val index = RepoStore.cachedIndex(url)
-            ?: throw Error("No cached index for '$url'; refresh it first")
+            ?: throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "No cached index for '$url'; refresh it first")
 
         index.plugins.map { (id, plugin) ->
             mapOf(

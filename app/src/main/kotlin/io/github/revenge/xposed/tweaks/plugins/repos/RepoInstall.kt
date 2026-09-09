@@ -1,9 +1,12 @@
 package io.github.revenge.xposed.tweaks.plugins.repos
 
-import io.github.revenge.Logger
 import io.github.revenge.plugins.Version
 import io.github.revenge.xposed.httpClient
 import io.github.revenge.xposed.tweaks.plugins.*
+import io.github.revenge.xposed.tweaks.plugins.external.StagedPlugin
+import io.github.revenge.xposed.tweaks.plugins.external.applyStagedPlugin
+import io.github.revenge.xposed.tweaks.plugins.external.extractPluginZip
+import io.github.revenge.xposed.tweaks.plugins.external.readExternalPluginDir
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
@@ -54,14 +57,18 @@ internal class DownloadProgress(
 )
 
 internal fun parseRepoInstallAction(raw: Any?): RepoInstallAction {
-    val map = raw as? Map<*, *> ?: throw Error("Expected a plan action object")
-    fun string(key: String) = map[key] as? String ?: throw Error("Plan action is missing '$key'")
+    val map = raw as? Map<*, *>
+        ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a plan action object")
+
+    fun string(key: String) = map[key] as? String
+        ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Plan action is missing '$key'")
     return RepoInstallAction(
         id = string("id"),
         version = Version.parse(string("version")),
         url = string("url"),
         sha256 = string("sha256"),
-        size = (map["size"] as? Number)?.toLong() ?: throw Error("Plan action is missing 'size'"),
+        size = (map["size"] as? Number)?.toLong()
+            ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Plan action is missing 'size'"),
         repo = string("repo"),
         channel = (map["channel"] as? String) ?: REPO_CHANNEL_LATEST,
     )
@@ -89,13 +96,15 @@ internal suspend fun executeInstallPlan(
     knownVersions: Map<String, Version>,
     isUpdate: (String) -> Boolean,
     isPendingReload: (String) -> Boolean,
-    log: Logger,
     onProgress: (DownloadProgress) -> Unit = {},
 ): InstallPlanResult {
     if (actions.isEmpty()) return InstallPlanResult(emptyList(), emptyList())
 
     val root = externalPluginsRoot(dataDir).apply { mkdirs() }
-    check(root.isDirectory && root.canWrite()) { "Plugin directory is not writable: $root" }
+    if (!root.isDirectory || !root.canWrite()) throw PluginSystemError(
+        PluginErrorCodes.STORAGE_FAILED,
+        "Plugin directory is not writable: $root"
+    )
 
     val staged = mutableListOf<Pair<RepoInstallAction, StagedPlugin>>()
     try {
@@ -111,7 +120,7 @@ internal suspend fun executeInstallPlan(
 
             // The manifest is authoritative, any mismatch with the plan aborts the whole plan.
             if (plugin.manifest.id != action.id || Version.parse(plugin.manifest.version) != action.version) {
-                throw PluginException(
+                throw PluginSystemError(
                     PluginErrorCodes.INSTALL_MISMATCH,
                     "Artifact manifest (${plugin.manifest.id}@${plugin.manifest.version}) does not match " +
                             "the plan (${action.id}@${action.version}); aborting the install plan",
@@ -127,8 +136,8 @@ internal suspend fun executeInstallPlan(
         for ((action, plugin) in orderStagedByDependencies(staged)) {
             val dir = applyStagedPlugin(plugin, root)
             runCatching {
-                SourcesStore.set(action.id, PluginSource(repo = action.repo, channel = action.channel))
-            }.onFailure { log.e("Failed to record plugin source for ${action.id}", it) }
+                SourcesStore.record(action.id, repo = action.repo, channel = action.channel)
+            }.onFailure { pluginLog.e("Failed to record plugin source for ${action.id}", it) }
 
             val deferred = isUpdate(action.id) || plugin.manifest.dependencies.any { (depId, dep) ->
                 !dep.optional && (depId in pendingIds || isPendingReload(depId))
@@ -136,10 +145,10 @@ internal suspend fun executeInstallPlan(
             if (deferred) {
                 pendingIds += action.id
                 pending += action
-                log.i("Applied ${action.id}@${action.version} from ${action.repo} (pending reload)")
+                pluginLog.i("Applied ${action.id}@${action.version} from ${action.repo} (pending reload)")
             } else {
-                fresh += readExternalPluginDir(dir, effectiveVersions, log)
-                log.i("Installed ${action.id}@${action.version} from ${action.repo}")
+                fresh += readExternalPluginDir(dir, effectiveVersions)
+                pluginLog.i("Installed ${action.id}@${action.version} from ${action.repo}")
             }
         }
         return InstallPlanResult(fresh, pending)
@@ -189,7 +198,7 @@ private suspend fun downloadAndVerify(
         onDownload { received, _ -> onReceived(received) }
     }
     if (response.status != HttpStatusCode.OK) {
-        throw PluginException(
+        throw PluginSystemError(
             PluginErrorCodes.INSTALL_FAILED,
             "Failed to download ${action.id}@${action.version}: ${response.status}",
         )
@@ -197,14 +206,14 @@ private suspend fun downloadAndVerify(
 
     val bytes: ByteArray = response.body()
     if (bytes.size.toLong() != action.size) {
-        throw PluginException(
+        throw PluginSystemError(
             PluginErrorCodes.INSTALL_VERIFY_FAILED,
             "Artifact for ${action.id}@${action.version} is ${bytes.size} bytes; the plan says ${action.size}",
         )
     }
     val digest = sha256Hex(bytes)
     if (digest != action.sha256) {
-        throw PluginException(
+        throw PluginSystemError(
             PluginErrorCodes.INSTALL_VERIFY_FAILED,
             "Artifact digest mismatch for ${action.id}@${action.version} (got $digest)",
         )

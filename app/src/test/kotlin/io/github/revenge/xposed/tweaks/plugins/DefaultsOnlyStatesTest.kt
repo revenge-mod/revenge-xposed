@@ -31,9 +31,9 @@ class DefaultsOnlyStatesTest {
         val states = loadWith("com.example.plugin")
 
         assertFalse(PluginStatesStore.defaultsOnly)
-        assertTrue(states.isPluginEnabled("com.example.plugin"))
-        assertTrue(states.hasPlugin("com.example.plugin"))
-        assertEquals(setOf(PluginFlags.ENABLED), PluginStatesStore.loadPluginFlags("com.example.plugin"))
+        assertTrue(states.isPluginEnabledThisBoot("com.example.plugin"))
+        assertTrue(states.hasPluginThisBoot("com.example.plugin"))
+        assertEquals(setOf(PluginFlags.ENABLED), PluginStatesStore.bootFlags("com.example.plugin"))
     }
 
     @Test
@@ -42,10 +42,10 @@ class DefaultsOnlyStatesTest {
         val states = loadWith("com.example.plugin")
 
         assertTrue(PluginStatesStore.defaultsOnly)
-        assertFalse(states.isPluginEnabled("com.example.plugin"))
-        // hasPlugin false is what makes enabled-by-default plugins load
-        assertFalse(states.hasPlugin("com.example.plugin"))
-        assertNull(PluginStatesStore.loadPluginFlags("com.example.plugin"))
+        assertFalse(states.isPluginEnabledThisBoot("com.example.plugin"))
+        // hasPluginThisBoot false is what makes enabled-by-default plugins load
+        assertFalse(states.hasPluginThisBoot("com.example.plugin"))
+        assertNull(PluginStatesStore.bootFlags("com.example.plugin"))
 
         // The underlying map is untouched, so a normal reload restores everything
         assertEquals(PluginFlags.ENABLED.bit.toDouble(), states.flags["com.example.plugin"])
@@ -62,7 +62,7 @@ class DefaultsOnlyStatesTest {
     }
 
     @Test
-    fun `writes during defaults-only land in the real map`() {
+    fun `saved writes during defaults-only land in the real map`() {
         PluginStatesStore.requestDefaultsOnlyBoot(dataDir.absolutePath)
         val states = loadWith("com.example.plugin")
 
@@ -72,6 +72,30 @@ class DefaultsOnlyStatesTest {
 
         states.setPluginFlags("com.example.other", setOf(PluginFlags.ENABLED))
         assertEquals(PluginFlags.ENABLED.bit.toDouble(), states.flags["com.example.other"])
+    }
+
+    @Test
+    fun `session syncs are ignored during defaults-only`() {
+        PluginStatesStore.requestDefaultsOnlyBoot(dataDir.absolutePath)
+        val states = loadWith("com.example.plugin")
+
+        // JS and the persist collector both report session flags, which start from defaults here.
+        PluginStatesStore.writeSessionFlags("com.example.plugin", setOf(PluginFlags.PENDING_RELOAD))
+
+        assertEquals(
+            PluginFlags.ENABLED.bit.toDouble(),
+            states.flags["com.example.plugin"],
+            "a session sync must never overwrite the setup the user is editing",
+        )
+    }
+
+    @Test
+    fun `session syncs write on a normal boot`() {
+        val states = loadWith("com.example.plugin")
+
+        PluginStatesStore.writeSessionFlags("com.example.plugin", emptySet())
+
+        assertEquals(0.0, states.flags["com.example.plugin"])
     }
 
     @Test

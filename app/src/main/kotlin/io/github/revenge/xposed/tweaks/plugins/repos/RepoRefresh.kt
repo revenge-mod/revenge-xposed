@@ -5,6 +5,8 @@ import androidx.core.util.writeBytes
 import io.github.revenge.xposed.ETagFetchResult
 import io.github.revenge.xposed.getWithETag
 import io.github.revenge.xposed.httpClient
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 
 private const val REFRESH_TIMEOUT = 10_000L
 
@@ -12,15 +14,16 @@ private const val REFRESH_TIMEOUT = 10_000L
 private const val INDEX_PATH = "index.json"
 
 /**
- * Refreshes one repository's cached index for a single source.
- * A failed fetch or an invalid index doesn't modify the cache.
+ * Refreshes one repository's cached index for a single source. A failed fetch or invalid index won't modify the cache.
  *
- * @return Returns the now-current index.
- * @throws IllegalStateException if the repository is unknown or the cache is unreadable.
- * @throws IllegalArgumentException if the index format is unsupported.
+ * @return Returns the new index.
+ * @throws PluginSystemError if the repository is unknown, the cache is unreadable, or the index format is unsupported.
  */
 internal suspend fun refreshRepo(url: String): RepoIndex {
-    require(RepoStore.list().any { it.url == url }) { "Unknown repository: '$url'" }
+    if (RepoStore.list().none { it.url == url }) throw PluginSystemError(
+        PluginErrorCodes.NOT_FOUND,
+        "Unknown repository: '$url'"
+    )
 
     val indexUrl = url.trimEnd('/') + "/" + INDEX_PATH
     val indexFile = RepoStore.cachedIndexFile(url)
@@ -35,7 +38,10 @@ internal suspend fun refreshRepo(url: String): RepoIndex {
     return when (result) {
         ETagFetchResult.NotModified ->
             RepoStore.cachedIndex(url)
-                ?: throw IllegalStateException("Repository '$url' responded 304 but the cache is unreadable")
+                ?: throw PluginSystemError(
+                    PluginErrorCodes.STORAGE_FAILED,
+                    "Repository '$url' responded 304 but the cache is unreadable",
+                )
 
         is ETagFetchResult.Fetched -> {
             val index = parseRepoIndex(result.bytes.decodeToString(), url, RepoStore.log)

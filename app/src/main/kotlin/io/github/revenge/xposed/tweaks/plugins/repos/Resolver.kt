@@ -2,23 +2,22 @@ package io.github.revenge.xposed.tweaks.plugins.repos
 
 import io.github.revenge.plugins.Version
 import io.github.revenge.plugins.VersionRange
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 
-/**
- * What to install and from where.
- */
 internal data class InstallPlan(
     val actions: List<PlannedAction>,
     /** Non-blocking problems (skipped optionals, dependent-range conflicts). */
     val warnings: List<String>,
 )
 
-/** One plugin to download and install. One action = one artifact. */
+/** One plugin to download and install. */
 internal data class PlannedAction(
     val id: String,
     val version: Version,
     /** Absolute artifact URL from the index. */
     val url: String,
-    /** Expected artifact digest. Verified after download, before anything is applied. */
+    /** Expected artifact digest. Verified after download. */
     val sha256: String,
     val size: Long,
     /** The repository this action installs from (recorded as provenance on success). */
@@ -35,20 +34,21 @@ internal data class ResolveRequest(
     val channel: String = REPO_CHANNEL_LATEST,
 )
 
-internal class ResolveException(message: String) : Exception(message)
+internal class PluginSystemResolveException(message: String) :
+    PluginSystemError(PluginErrorCodes.RESOLVE_FAILED, message)
 
 /**
- * Resolves [request] against the given enabled repositories by priority order.
+ * Resolves [request] against the given [repos] by priority order.
+ * [installed] must include internal plugins.
  *
- * - An installed plugin with known provenance only resolves from its pinned repository.
+ * - A plugin with provenance only resolves from its pinned repository.
  *   New plugins resolve from the first repository that serves them.
  * - Dependency ranges are checked with [VersionRange.satisfies].
  * - Exact requested version > channel pointer > newest non-labeled version > newest version
- * - Unsatisfied required dependencies are planned recursively. Unresolvable ones abort with [ResolveException].
+ * - A held dependency stays at its installed version. If that doesn't satisfy the dependent, resolution fails.
+ * - Unsatisfied required dependencies are planned recursively. Unresolvables will cause [PluginSystemResolveException].
  * - Unresolvable optional dependencies produce a warning.
  * - A planned version that breaks an installed dependent's range produces a warning.
- *
- * [installed] must include internal plugins.
  */
 internal fun resolveInstall(
     request: ResolveRequest,
@@ -113,18 +113,25 @@ internal fun resolveInstall(
                 continue
             }
 
-            val depChoice = select(candidatesFor(depId).filter { range.satisfies(it.second) })
+            val depChoice =
+                if (sources[depId]?.held == true) null
+                else select(candidatesFor(depId).filter { range.satisfies(it.second) })
             when {
                 depChoice != null -> plan(depId, depChoice)
 
                 dep.optional -> warnings +=
                     "Optional dependency '$depId' of $id@$version is unavailable (requires $range); skipped"
 
-                effective != null -> throw ResolveException(
+                sources[depId]?.held == true -> throw PluginSystemResolveException(
+                    "Dependency '$depId' is held at ${installed[depId]}, which does not satisfy $id@$version " +
+                            "(requires $range); unhold '$depId' to let it update"
+                )
+
+                effective != null -> throw PluginSystemResolveException(
                     "Dependency '$depId' of $id@$version is installed at $effective but no version satisfying $range is available"
                 )
 
-                else -> throw ResolveException(
+                else -> throw PluginSystemResolveException(
                     "Required dependency '$depId' of $id@$version is not installed and not available from any repository (requires $range)"
                 )
             }
@@ -136,7 +143,7 @@ internal fun resolveInstall(
     val rootChoice = if (request.version != null) {
         val exact = Version.parse(request.version)
         rootCandidates.firstOrNull { it.second == exact }
-            ?: throw ResolveException("Version ${request.version} of '${request.id}' is not available")
+            ?: throw PluginSystemResolveException("Version ${request.version} of '${request.id}' is not available")
     } else {
         // Channel pointer first (from the highest-priority repo defining it), then newest.
         reposFor(request.id).firstNotNullOfOrNull { (repoUrl, index) ->
@@ -145,12 +152,12 @@ internal fun resolveInstall(
             val version = runCatching { Version.parse(target) }.getOrNull() ?: return@firstNotNullOfOrNull null
             plugin.versions[target]?.let { Triple(repoUrl, version, it) }
         } ?: select(rootCandidates)
-        ?: throw ResolveException("Plugin '${request.id}' is not available from any repository")
+        ?: throw PluginSystemResolveException("Plugin '${request.id}' is not available from any repository")
     }
 
     installed[request.id]?.let { current ->
         if (current == rootChoice.second) {
-            // Nothing to do for the root; still return a valid (possibly empty) plan.
+            // Nothing to do.
             return InstallPlan(emptyList(), listOf("'${request.id}' is already at $current"))
         }
         if (rootChoice.second < current) {
