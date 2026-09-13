@@ -11,6 +11,7 @@ val pluginMethods by tweak {
     pluginSystemMethod("revenge.plugins.getConstants") {
         mapOf(
             "storageRootPath" to pluginStorageRoot(appInfo.dataDir).absolutePath,
+            "defaultsOnlySlot" to PluginStatesStore.DEFAULTS_SLOT,
         )
     }
 
@@ -85,10 +86,10 @@ val pluginMethods by tweak {
 
         requireValidPluginId(pluginId)
 
+        // Delete data from all slots.
         File(externalPluginsRoot(appInfo.dataDir), pluginId).deleteRecursively()
-        File(pluginStorageRoot(appInfo.dataDir), pluginId).deleteRecursively()
-
-        clearSavedFlags(pluginId)
+        for (dir in pluginStorageDirsOfAllSlots(appInfo.dataDir, pluginId)) dir.deleteRecursively()
+        PluginStatesStore.removePluginFromAllSlots(appInfo.dataDir, pluginId)
         runCatching { SourcesStore.remove(pluginId) }
             .onFailure { pluginLog.e("Failed to remove plugin source for $pluginId", it) }
 
@@ -116,9 +117,9 @@ val pluginMethods by tweak {
 
             val requiredByUser = requiredByUser == true
 
-            // Emitting here in defaults-only boot only enables the plugin in-session and won't persist the flag,
+            // In a defaults boot this only enables the plugin for the session, since the boot slot is ephemeral.
+            // enablePlugin writes the slot the user chose.
             entry?.let { it.scope.flags.value += pluginEnablementFlags(requiredByUser) }
-            // So we also explicitly save here.
             enablePlugin(pluginId, requiredByUser)
         } else {
             // Note that essential plugins will be rejected by disablePlugin itself.

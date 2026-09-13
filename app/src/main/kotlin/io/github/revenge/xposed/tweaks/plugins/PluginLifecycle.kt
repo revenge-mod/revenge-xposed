@@ -79,9 +79,10 @@ internal fun loadPlugin(
     val manifest = factory.manifest
 
     val plugin = factory.builder.build(manifest)
-    val flags = MutableStateFlow(PluginStatesStore.bootFlags(manifest.id) ?: emptySet())
+    // Use the boot flags as it's what's currently running this session.
+    val flags = PluginStatesStore.boot.flagsOf(manifest.id)
 
-    // Turn on plugins that are essential or on by default, unless a saved flag already says so.
+    // Turn on plugins that are essential or on by default, unless the slot already says so.
     if (
         PluginFlags.ENABLED !in flags.value &&
         (InternalPluginFlags.ESSENTIAL in factory.internalFlags ||
@@ -93,11 +94,12 @@ internal fun loadPlugin(
     if (late) flags.value += PluginFlags.STARTED_LATE
 
     val scope = PluginScopeImpl(host, plugin, flags)
+    val bootSlot = PluginStatesStore.boot
 
     // `drop(1)` skips the initial load so we don't re-persist the values we just loaded.
     val persistJob = flags.drop(1).onEach { newFlags ->
-        PluginStatesStore.writeSessionFlags(manifest.id, newFlags)
-        sendSessionStateToJS(manifest.id, newFlags)
+        bootSlot.write(manifest.id, newFlags)
+        sendStateToJS(bootSlot.id, manifest.id, newFlags)
     }.launchIn(pluginJobScope)
 
     val errorSyncJob = scope.errors.onEach {
@@ -151,7 +153,7 @@ internal fun stopPlugin(pluginId: String) {
         pluginLog.e("Plugin $pluginId threw in stop()", e)
     } finally {
         // stop() may have changed flags (requireReload), we need to sync before stopping the job.
-        dispatchSessionStateToJS(pluginId, entry.scope.flags.value)
+        dispatchStateToJS(PluginStatesStore.bootSlotId, pluginId, entry.scope.flags.value)
 
         entry.persistJob.cancel()
         entry.errorSyncJob.cancel()
@@ -159,8 +161,10 @@ internal fun stopPlugin(pluginId: String) {
 }
 
 /**
- * Disables and stops a plugin. Required dependents (transitively) lose their persisted enabled state too,
- * since they can't run without this plugin anymore. Linked optionals only stop, they can load fine next start.
+ * Disables and stops a plugin.
+ * 
+ * Required dependents (transitively) lose their enabled state in the active slot too.
+ * Linked optionals only stop, since they can load fine without this plugin next start.
  *
  * Throws when the plugin is essential.
  */
@@ -201,9 +205,9 @@ internal fun disablePlugin(pluginId: String) {
             val plugin = loaded[id]
             val currentFlags = plugin?.scope?.flags?.value ?: emptySet()
             val newFlags = currentFlags.filter { it.persistAfterDisable }.toSet()
-            updateSavedFlags(id, newFlags)
+            writeActiveSlotFlags(id, newFlags)
 
-            // Sync correct data to running instances to broadcast updates to JS as well.
+            // Sync running instances for the boot slot as well.
             loaded[id]?.let { it.scope.flags.value = newFlags }
         }
     }
@@ -218,30 +222,31 @@ internal fun pluginEnablementFlags(requiredByUser: Boolean) = buildSet {
 
 context(host: HostScope)
 internal fun enablePlugin(pluginId: String, requiredByUser: Boolean) =
-    updateSavedFlags(pluginId, pluginEnablementFlags(requiredByUser))
+    writeActiveSlotFlags(pluginId, pluginEnablementFlags(requiredByUser))
 
 private fun isEssential(pluginId: String): Boolean =
     pluginRegistry.factories[pluginId]?.let { InternalPluginFlags.ESSENTIAL in it.internalFlags } ?: false
 
 private fun isPluginEnabled(pluginId: String, factory: PluginFactory?): Boolean {
     loaded[pluginId]?.let { return PluginFlags.ENABLED in it.scope.flags.value }
-    val states = PluginStatesStore.states!!
-    if (states.isPluginEnabledInSaved(pluginId)) return true
+    val active = PluginStatesStore.active
+    if (active.isPluginEnabled(pluginId)) return true
     if (factory == null) return false
     return InternalPluginFlags.ESSENTIAL in factory.internalFlags ||
             (InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags &&
-                    !states.hasPluginInSaved(pluginId))
+                    !active.hasPlugin(pluginId))
 }
 
-/** Updates the saved states, which is what applies on the next boot, and notifies JS. */
+/** Writes the slot the user chose, which is what applies on the next boot, and tells JS. */
 context(host: HostScope)
-internal fun updateSavedFlags(pluginId: String, flags: Iterable<PluginFlags>) {
+internal fun writeActiveSlotFlags(pluginId: String, flags: Iterable<PluginFlags>) {
     val newFlags = flags.toSet()
-    PluginStatesStore.writeSavedFlags(pluginId, newFlags)
-    dispatchSavedStateToJS(pluginId, newFlags)
+    PluginStatesStore.active.write(pluginId, newFlags)
+    dispatchStateToJS(PluginStatesStore.activeSlotId, pluginId, newFlags)
 }
 
-internal fun clearSavedFlags(pluginId: String) = PluginStatesStore.removeSavedFlags(pluginId)
+/** Drops the plugin's entry from the slot this boot runs on. */
+internal fun clearBootSlotFlags(pluginId: String) = PluginStatesStore.boot.remove(pluginId)
 
 internal fun unsatisfiedDependenciesMessage(pluginId: String, problems: List<Map<String, Any?>>): String {
     val details = problems.joinToString(", ") { p ->

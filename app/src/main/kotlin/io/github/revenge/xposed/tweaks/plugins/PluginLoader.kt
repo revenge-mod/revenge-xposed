@@ -8,6 +8,9 @@ import io.github.revenge.xposed.tweaks.plugins.internal.internalPlugins
 val pluginLoader by tweak {
     val errors = mutableListOf<String>()
 
+    // Load states before anything reads or writes a slot.
+    PluginStatesStore.ensureLoaded(appInfo.dataDir)
+
     val discovery = discoverExternalPlugins(
         appInfo.dataDir,
         internalPlugins.associate { it.manifest.id to it.manifest.version },
@@ -20,13 +23,13 @@ val pluginLoader by tweak {
     // They can run once the issues are resolved (e.g. loader/plugin/Discord update).
     for ((id, failure) in discovery.failures) {
         // Prefer the validated manifest's ID, since [id] could be a directory name instead.
-        if (failure.isPluginFault) clearSavedFlags(failure.manifest?.id ?: id)
+        if (failure.isPluginFault) clearBootSlotFlags(failure.manifest?.id ?: id)
     }
 
     for (factory in internalPlugins + external) pluginRegistry.add(factory)
 
     PluginStatesStore.batchSave {
-        val states = PluginStatesStore.ensureLoaded(appInfo.dataDir)
+        val slot = PluginStatesStore.boot
 
         for (factory in internalPlugins + external) {
             val manifest = factory.manifest
@@ -35,9 +38,9 @@ val pluginLoader by tweak {
                 val essential = InternalPluginFlags.ESSENTIAL in factory.internalFlags
                 val enabledByDefault = InternalPluginFlags.ENABLED_BY_DEFAULT in factory.internalFlags
 
-                val shouldLoad = states.isPluginEnabledThisBoot(manifest.id) ||
+                val shouldLoad = slot.isPluginEnabled(manifest.id) ||
                         essential ||
-                        (enabledByDefault && !states.hasPluginThisBoot(manifest.id))
+                        (enabledByDefault && !slot.hasPlugin(manifest.id))
 
                 if (!shouldLoad) {
                     pluginLog.i("Skipping disabled plugin: ${manifest.id}")

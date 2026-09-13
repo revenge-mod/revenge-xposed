@@ -85,7 +85,11 @@ fun showRecoveryAlert(context: Context) {
                 0 -> reloadApp()
 
                 1 -> {
-                    PluginStatesStore.requestDefaultsOnlyBoot(context.dataDir.absolutePath)
+                    PluginStatesStore.setActiveSlot(
+                        context.dataDir.absolutePath,
+                        PluginStatesStore.DEFAULTS_SLOT,
+                        oneShot = true,
+                    )
                     reloadApp()
                 }
 
