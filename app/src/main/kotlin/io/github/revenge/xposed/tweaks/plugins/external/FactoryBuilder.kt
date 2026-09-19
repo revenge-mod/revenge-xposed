@@ -1,9 +1,10 @@
 package io.github.revenge.xposed.tweaks.plugins.external
 
-import io.github.revenge.plugins.Version
+import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.plugin
 import io.github.revenge.xposed.RevengeJson
 import io.github.revenge.xposed.requireInside
+import io.github.revenge.xposed.tweaks.plugins.PluginDependencyGraph
 import io.github.revenge.xposed.tweaks.plugins.PluginFactory
 import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 import io.github.revenge.xposed.tweaks.plugins.pluginLog
@@ -21,19 +22,23 @@ internal fun parseExternalPluginDir(dir: File): ParsedExternalPlugin = ParsedExt
  *
  * Throws on malformed manifest, missing required dependencies/unsatisfied version range.
  * Unavailable optional dependencies are dropped with a warning.
+ *
+ * @param knownManifests Every plugin installed used to resolve this plugin's dependencies.
  */
-internal fun readExternalPluginDir(dir: File, knownVersions: Map<String, Version>): PluginFactory {
+internal fun readExternalPluginDir(dir: File, knownManifests: Map<String, PluginManifest>): PluginFactory {
     val parsed = parseExternalPluginDir(dir)
+    val manifest = parsed.manifest.toPluginManifest()
+    val id = manifest.id
 
-    for ((depId, dep) in parsed.manifest.dependencies) {
-        val problem = unsatisfiedDependencyReason(depId, dep, knownVersions[depId]) ?: continue
+    val graph = PluginDependencyGraph(knownManifests + (id to manifest))
 
-        if (dep.optional) {
-            parsed.availableDeps -= depId
-            if (knownVersions[depId] != null) parsed.unsatisfiedOptionalDeps += depId
-            pluginLog.w("Optional ${problem.reason} for plugin '${parsed.manifest.id}'; ignoring")
+    for (depId in manifest.dependencies.keys) {
+        val problem = graph.problem(id, depId) ?: continue
+
+        if (manifest.dependencies.getValue(depId).optional) {
+            pluginLog.w("Optional ${problem.reason} for plugin '$id'; ignoring")
         } else {
-            throw PluginSystemError(problem.code, "Plugin '${parsed.manifest.id}': ${problem.reason}")
+            throw PluginSystemError(problem.code, "Plugin '$id': ${problem.reason}")
         }
     }
 
@@ -42,17 +47,8 @@ internal fun readExternalPluginDir(dir: File, knownVersions: Map<String, Version
 
 internal fun buildExternalFactory(parsed: ParsedExternalPlugin): PluginFactory {
     val (dir, manifest) = parsed.dir to parsed.manifest
-    val dexCache = File(dir.parentFile, DEX_CACHE_DIR).apply { mkdirs() }
 
     val pluginManifest = manifest.toPluginManifest()
-
-    val builder = manifest.dist?.android
-        ?.let { android ->
-            // Chain class loaders of dependencies this plugin can link against.
-            val depLoaders = parsed.availableDeps.mapNotNull { nativePluginLoaders[it] }
-            loadNativeBuilder(dir, dexCache, android, manifest.id, depLoaders)
-        }
-        ?: plugin {} // JS-only plugin, no native body.
 
     val scriptPath = manifest.dist?.script?.let { script ->
         val file = File(dir, script)
@@ -65,12 +61,16 @@ internal fun buildExternalFactory(parsed: ParsedExternalPlugin): PluginFactory {
         }
     }
 
-    pluginLog.i("Loaded external plugin: ${pluginManifest.id} ${pluginManifest.version}")
+    val android = manifest.dist?.android
 
-    return PluginFactory(
-        builder,
-        pluginManifest,
-        scriptPath = scriptPath,
-        unsatisfiedOptionalDependencies = parsed.unsatisfiedOptionalDeps.toSet(),
-    )
+    pluginLog.i("Discovered external plugin: ${pluginManifest.id} ${pluginManifest.version}")
+
+    return PluginFactory(pluginManifest, scriptPath = scriptPath) { chain ->
+        // JS-only plugin, no native body.
+        if (android == null) plugin {}
+        else {
+            val dexCache = File(dir.parentFile, DEX_CACHE_DIR).apply { mkdirs() }
+            loadNativeBuilder(dir, dexCache, android, manifest.id, chain.mapNotNull { nativePluginLoaders[it] })
+        }
+    }
 }

@@ -3,7 +3,9 @@ package io.github.revenge.xposed.tweaks.plugins.external
 
 import io.github.revenge.plugins.API_DEPENDENCY_ID
 import io.github.revenge.plugins.DISCORD_DEPENDENCY_ID
+import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.Version
+import io.github.revenge.xposed.tweaks.plugins.PluginDependencyGraph
 import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
 import io.github.revenge.xposed.tweaks.plugins.externalPluginsRoot
 import java.io.File
@@ -17,10 +19,13 @@ import kotlin.test.*
 class DiscoveryFailureTest {
     private val dataDir: File = Files.createTempDirectory("revenge-discovery-test").toFile()
 
-    private val knownVersions = mapOf(
+    /** The reserved dependencies, which every plugin below declares. */
+    private val knownManifests = listOf(
         API_DEPENDENCY_ID to Version.parse("1.0.0"),
         DISCORD_DEPENDENCY_ID to Version.parse("0"),
-    )
+    ).associate { (id, version) ->
+        id to PluginManifest(id, id, "", "", version = version)
+    }
 
     @AfterTest
     fun cleanup() {
@@ -53,7 +58,12 @@ class DiscoveryFailureTest {
         File(dir, "plugin.js").writeText("() => ({})")
     }
 
-    private fun discover() = discoverExternalPlugins(dataDir.absolutePath, knownVersions)
+    private fun discover() = discoverExternalPlugins(dataDir.absolutePath, knownManifests)
+
+    /** Discovery chains nothing, so what a plugin *may* link is the graph's answer until it is realized. */
+    private fun ExternalDiscovery.satisfiedFor(id: String): Set<String> =
+        PluginDependencyGraph(knownManifests + factories.associate { it.manifest.id to it.manifest })
+            .satisfiedDependencies(id)
 
     @Test
     fun `valid plugin loads with no failures`() {
@@ -162,7 +172,8 @@ class DiscoveryFailureTest {
 
         assertEquals(listOf("com.example.tolerant"), discovery.factories.map { it.manifest.id })
         assertTrue(discovery.failures.isEmpty())
-        assertTrue(discovery.factories.single().unsatisfiedOptionalDependencies.isEmpty())
+        // Absent, so nothing to chain.
+        assertTrue("com.example.gone" !in discovery.satisfiedFor("com.example.tolerant"))
     }
 
     @Test
@@ -180,8 +191,8 @@ class DiscoveryFailureTest {
             discovery.factories.map { it.manifest.id }.toSet(),
         )
         assertTrue(discovery.failures.isEmpty())
-        val tolerant = discovery.factories.single { it.manifest.id == "com.example.tolerant" }
-        assertEquals(setOf("com.example.dep"), tolerant.unsatisfiedOptionalDependencies)
+        // Present but out of range, so it can never be chained.
+        assertTrue("com.example.dep" !in discovery.satisfiedFor("com.example.tolerant"))
     }
 
     @Test
@@ -195,8 +206,16 @@ class DiscoveryFailureTest {
         val discovery = discover()
 
         assertTrue(discovery.failures.isEmpty())
-        val tolerant = discovery.factories.single { it.manifest.id == "com.example.tolerant" }
-        assertTrue(tolerant.unsatisfiedOptionalDependencies.isEmpty())
+        assertTrue("com.example.dep" in discovery.satisfiedFor("com.example.tolerant"))
+    }
+
+    @Test
+    fun `discovery loads no plugin code`() {
+        writePlugin("com.example.ok")
+
+        val factory = discover().factories.single()
+
+        assertNull(factory.chainedDependencies, "discovery must not build a plugin the user may have disabled")
     }
 
     @Test
@@ -211,8 +230,8 @@ class DiscoveryFailureTest {
             PluginErrorCodes.DEPENDENCY_CYCLE,
             discovery.failures["com.example.a"]?.errors?.single()?.code,
         )
-        assertTrue(discovery.failures["com.example.a"]?.errors?.single()?.message?.contains("cycle") == true)
-        assertTrue(discovery.failures["com.example.b"]?.errors?.single()?.message?.contains("cycle") == true)
+        assertEquals(true, discovery.failures["com.example.a"]?.errors?.single()?.message?.contains("cycle"))
+        assertEquals(true, discovery.failures["com.example.b"]?.errors?.single()?.message?.contains("cycle"))
     }
 
     @Test

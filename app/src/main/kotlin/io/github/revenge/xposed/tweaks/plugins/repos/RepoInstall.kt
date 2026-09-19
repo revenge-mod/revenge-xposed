@@ -1,5 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins.repos
 
+import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.Version
 import io.github.revenge.xposed.httpClient
 import io.github.revenge.xposed.tweaks.plugins.*
@@ -93,7 +94,7 @@ internal fun parseRepoInstallAction(raw: Any?): RepoInstallAction {
 internal suspend fun executeInstallPlan(
     actions: List<RepoInstallAction>,
     dataDir: String,
-    knownVersions: Map<String, Version>,
+    knownManifests: Map<String, PluginManifest>,
     isUpdate: (String) -> Boolean,
     isPendingReload: (String) -> Boolean,
     onProgress: (DownloadProgress) -> Unit = {},
@@ -128,8 +129,9 @@ internal suspend fun executeInstallPlan(
             }
         }
 
-        // Apply, dependencies before dependents
-        val effectiveVersions = knownVersions + actions.associate { it.id to it.version }
+        // Apply, dependencies before dependents, including the staging plugins.
+        val effectiveManifests =
+            knownManifests + staged.associate { (_, plugin) -> plugin.manifest.id to plugin.manifest.toPluginManifest() }
         val fresh = mutableListOf<PluginFactory>()
         val pending = mutableListOf<RepoInstallAction>()
         val pendingIds = mutableSetOf<String>()
@@ -147,7 +149,7 @@ internal suspend fun executeInstallPlan(
                 pending += action
                 pluginLog.i("Applied ${action.id}@${action.version} from ${action.repo} (pending reload)")
             } else {
-                fresh += readExternalPluginDir(dir, effectiveVersions)
+                fresh += readExternalPluginDir(dir, effectiveManifests)
                 pluginLog.i("Installed ${action.id}@${action.version} from ${action.repo}")
             }
         }

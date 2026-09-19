@@ -21,7 +21,7 @@ internal fun PluginFactory.toJSPayload(
     "enabledByDefault" to (InternalPluginFlags.ENABLED_BY_DEFAULT in internalFlags),
     "api" to (InternalPluginFlags.API in internalFlags),
     "source" to source?.toJSPayload(),
-    "unsatisfiedOptionalDependencies" to unsatisfiedOptionalDependencies.toList(),
+    "unsatisfiedOptionalDependencies" to pluginRegistry.dependencies.unsatisfiedOptionalDependencies(manifest.id).toList(),
     // Errors the native side has already hit (e.g. at boot, before JS was up).
     "errors" to buildList {
         bootError?.apply { add(toJSPayload()) }

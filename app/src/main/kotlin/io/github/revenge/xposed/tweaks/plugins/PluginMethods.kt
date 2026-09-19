@@ -30,45 +30,33 @@ val pluginMethods by tweak {
         }
     }
 
-    pluginSystemMethod("revenge.plugins.startNative") { args ->
+    /**
+     * `revenge.plugins.stop(id)`
+     *
+     * JS has already stopped its half down and cascaded. This stops the native half
+     */
+    pluginSystemAsyncMethod("revenge.plugins.stop") { args ->
         val argv = args.asDelegate()
         val pluginId by argv.string()
 
-        val entry = pluginRegistry.loaded[pluginId]
-        when {
-            entry != null -> {
-                // Already built this session but stopped, so start it again.
-                if (!entry.started) {
-                    entry.scope.flags.value += PluginFlags.STARTED_LATE
-                    try {
-                        entry.plugin.start(entry.scope)
-                    } catch (e: Throwable) {
-                        entry.scope.errors.tryEmit(e)
-                        pluginLog.e("Plugin $pluginId threw in start()", e)
-                    }
-                    entry.started = true
-                }
-            }
-
-            else -> pluginRegistry.factories[pluginId]?.let { factory ->
-                // Not loaded at boot (disabled, or freshly installed).
-                try {
-                    loadPlugin(factory, late = true)
-                } catch (e: Throwable) {
-                    throw PluginSystemError(
-                        PluginErrorCodes.LOAD_FAILED,
-                        e.message ?: "Failed to load plugin '$pluginId'",
-                        e,
-                    )
-                }
-                pluginRegistry.bootErrors.remove(pluginId)
-            }
-            // Unknown ID: a JS-side plugin with no native counterpart
-        }
+        stopNativePlugin(pluginId)
         null
     }
 
-    pluginSystemMethod("revenge.plugins.uninstall") { args ->
+    /**
+     * `revenge.plugins.restart(id)`
+     *
+     * See [restartPlugin].
+     */
+    pluginSystemAsyncMethod("revenge.plugins.restart") { args ->
+        val argv = args.asDelegate()
+        val pluginId by argv.string()
+
+        restartPlugin(pluginId)
+        null
+    }
+
+    pluginSystemAsyncMethod("revenge.plugins.uninstall") { args ->
         val argv = args.asDelegate()
         val pluginId by argv.string()
 
@@ -94,10 +82,11 @@ val pluginMethods by tweak {
             .onFailure { pluginLog.e("Failed to remove plugin source for $pluginId", it) }
 
         pluginLog.i("Uninstalled plugin: $pluginId")
+        emitDependencyGraphUpdate()
         null
     }
 
-    pluginSystemMethod("revenge.plugins.setEnabled") { args ->
+    pluginSystemAsyncMethod("revenge.plugins.setEnabled") { args ->
         val argv = args.asDelegate()
         val pluginId by argv.string()
         val enabled by argv.boolean()
@@ -108,7 +97,7 @@ val pluginMethods by tweak {
 
         if (enabled) {
             // Required deps must be installed, satisfied and enabled first. JS must handle the resolution UX.
-            val problems = factory?.dependencyProblems(pluginRegistry.factories).orEmpty()
+            val problems = factory?.dependencyProblemsToJSPayload(pluginRegistry.factories).orEmpty()
             if (problems.isNotEmpty()) throw PluginSystemError(
                 PluginErrorCodes.DEPENDENCIES_UNSATISFIED,
                 unsatisfiedDependenciesMessage(pluginId, problems),

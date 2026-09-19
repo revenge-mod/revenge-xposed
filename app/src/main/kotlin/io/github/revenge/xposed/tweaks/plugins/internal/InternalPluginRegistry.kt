@@ -16,8 +16,11 @@ enum class InternalPluginFlags {
 internal fun internalPlugin(
     manifest: PluginManifest,
     flags: Set<InternalPluginFlags> = emptySet(),
-    block: PluginBuilder.() -> Unit
-) = PluginFactory(plugin(block), manifest.withReservedDependencies(), flags)
+    block: PluginBuilder.() -> Unit,
+): PluginFactory {
+    val builder = plugin(block)
+    return PluginFactory(manifest.withReservedDependencies(), flags) { builder }
+}
 
 /**
  * Injects the reserved dependencies ([RESERVED_DEPENDENCY_IDS]) at the ANY range,

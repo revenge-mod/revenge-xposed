@@ -32,6 +32,9 @@ internal object PluginErrorCodes {
     /** Can't enable, required dependencies are missing or out of range. */
     const val DEPENDENCIES_UNSATISFIED = "DEPENDENCIES_UNSATISFIED"
 
+    /** The plugin could not undo changes, so we can't start it again unless a reload is performed. */
+    const val RELOAD_REQUIRED = "RELOAD_REQUIRED"
+
     const val STORAGE_FAILED = "STORAGE_FAILED"
 
     /** Anything that isn't a [PluginSystemError]. */

@@ -13,11 +13,11 @@ val pluginLoader by tweak {
 
     val discovery = discoverExternalPlugins(
         appInfo.dataDir,
-        internalPlugins.associate { it.manifest.id to it.manifest.version },
+        internalPlugins.associate { it.manifest.id to it.manifest },
     )
     val external = discovery.factories
 
-    pluginRegistry.discoveryFailures.putAll(discovery.failures)
+    pluginRegistry.recordDiscoveryFailures(discovery.failures)
 
     // Some discovery errors aren't hard errors (unsatisfied deps), but won't allow the plugins to run in this session.
     // They can run once the issues are resolved (e.g. loader/plugin/Discord update).
