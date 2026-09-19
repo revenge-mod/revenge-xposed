@@ -50,6 +50,9 @@ object RevengeBridgeRegistry : RevengeBridge {
     internal const val NATIVE_METHOD_NAME_KEY = "method"
     internal const val NATIVE_METHOD_ARGS_KEY = "args"
 
+    override val isReady: Boolean
+        get() = reactInstanceCallFunctionOnModule != null && reactInstance?.get() != null
+
     override fun registerMethod(name: String, handler: MethodCallback) {
         if (methods.containsKey(name) || asyncMethods.containsKey(name))
             log.w("Bridge method already exists and will be overridden: $name")
