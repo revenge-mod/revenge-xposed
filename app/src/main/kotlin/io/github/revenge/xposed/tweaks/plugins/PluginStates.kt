@@ -1,5 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins
 
+import android.os.Build
 import io.github.revenge.Logger
 import io.github.revenge.bridge.asDelegate
 import io.github.revenge.logger
@@ -7,6 +8,8 @@ import io.github.revenge.xposed.ensureDir
 import io.github.revenge.xposed.tweak
 import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.*
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 /**
  * Plugin states + `revenge.plugins.states.*` bridge methods.
@@ -193,25 +196,73 @@ class PluginStateSlot(
         if (!persistent) return
         val target = file ?: return
         val entries = snapshot()
-        val tmp = File(target.parentFile, "${target.name}.tmp")
+
+        val parentDir = target.parentFile ?: return
+        parentDir.mkdirs()
+
+        val tmpFile = File(parentDir, "${target.name}.tmp")
+        val bakFile = File(parentDir, "${target.name}.bak")
 
         try {
-            target.parentFile?.mkdirs()
-            DataOutputStream(BufferedOutputStream(FileOutputStream(tmp))).use { out ->
+            DataOutputStream(BufferedOutputStream(FileOutputStream(tmpFile))).use { out ->
                 out.writeInt(CURRENT_VERSION)
                 out.writeInt(entries.size)
                 for ((pluginId, flags) in entries) {
                     out.writeUTF(pluginId)
                     out.writeInt(flags.toBitmask())
                 }
+                out.flush()
             }
-            if (!tmp.renameTo(target)) {
-                target.delete()
-                if (!tmp.renameTo(target)) throw IOException("Rename failed: $tmp -> $target")
+
+            if (target.exists()) {
+                if (!bakFile.exists()) {
+                    if (!renameFile(target, bakFile)) {
+                        throw IOException("Failed to back up $target to $bakFile")
+                    }
+                } else {
+                    // An old backup existed, overwrite target
+                    target.delete()
+                }
             }
+
+            if (!renameFile(tmpFile, target)) {
+                // Restore backup if tmp failed to replace target
+                if (bakFile.exists()) {
+                    renameFile(bakFile, target)
+                }
+                throw IOException("Failed to rename $tmpFile to $target")
+            }
+
+            bakFile.delete()
+
         } catch (t: Throwable) {
-            tmp.delete()
+            tmpFile.delete()
             throw IOException("Failed to save plugin states slot '$id'", t)
+        }
+    }
+
+    private fun renameFile(src: File, dst: File): Boolean {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) error("API not supported")
+            Files.move(
+                src.toPath(),
+                dst.toPath(),
+                StandardCopyOption.REPLACE_EXISTING,
+                StandardCopyOption.ATOMIC_MOVE
+            )
+            return true
+        } catch (_: Exception) {
+            try {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) error("API not supported")
+                Files.move(
+                    src.toPath(),
+                    dst.toPath(),
+                    StandardCopyOption.REPLACE_EXISTING
+                )
+                return true
+            } catch (_: Exception) {
+                return src.renameTo(dst)
+            }
         }
     }
 
