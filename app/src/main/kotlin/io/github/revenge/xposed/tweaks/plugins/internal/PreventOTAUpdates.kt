@@ -16,7 +16,7 @@ private val manifest = PluginManifest(
 )
 
 internal val preventOtaUpdatesPlugin =
-    internalPlugin(manifest, setOf(InternalPluginFlags.INTERNAL)) {
+    internalPlugin(manifest) {
         start {
             if (startedLate) {
                 withAppActivity {

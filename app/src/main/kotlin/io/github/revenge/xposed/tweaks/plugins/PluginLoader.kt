@@ -1,8 +1,10 @@
 package io.github.revenge.xposed.tweaks.plugins
 
 import io.github.revenge.xposed.tweak
+import io.github.revenge.xposed.tweaks.bundleManifest
 import io.github.revenge.xposed.tweaks.plugins.external.discoverExternalPlugins
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
+import io.github.revenge.xposed.tweaks.plugins.internal.bundledPlugins
 import io.github.revenge.xposed.tweaks.plugins.internal.internalPlugins
 
 val pluginLoader by tweak {
@@ -11,10 +13,13 @@ val pluginLoader by tweak {
     // Load states before anything reads or writes a slot.
     PluginStatesStore.ensureLoaded(appInfo.dataDir)
 
-    val discovery = discoverExternalPlugins(
-        appInfo.dataDir,
-        internalPlugins.associate { it.manifest.id to it.manifest },
-    )
+    val bundled = bundledPlugins(bundleManifest)
+        // Not an existing internal plugin
+        .filterNot { b -> internalPlugins.any { it.manifest.id == b.manifest.id } }
+
+    val known = internalPlugins + bundled
+
+    val discovery = discoverExternalPlugins(appInfo.dataDir, known.associate { it.manifest.id to it.manifest })
     val external = discovery.factories
 
     pluginRegistry.recordDiscoveryFailures(discovery.failures)
@@ -26,12 +31,12 @@ val pluginLoader by tweak {
         if (failure.isPluginFault) clearBootSlotFlags(failure.manifest?.id ?: id)
     }
 
-    for (factory in internalPlugins + external) pluginRegistry.add(factory)
+    for (factory in known + external) pluginRegistry.add(factory)
 
     PluginStatesStore.batchSave {
         val slot = PluginStatesStore.boot
 
-        for (factory in internalPlugins + external) {
+        for (factory in known + external) {
             val manifest = factory.manifest
 
             try {

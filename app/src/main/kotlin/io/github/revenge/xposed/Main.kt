@@ -48,6 +48,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         // Async updater
         revengeUpdater,
+        revengeBundleManifest,
 
         // Consumers
         discordDevSupport,

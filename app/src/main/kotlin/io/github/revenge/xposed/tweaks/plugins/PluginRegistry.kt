@@ -1,10 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins
 
-import io.github.revenge.plugins.Plugin
-import io.github.revenge.plugins.PluginBuilder
-import io.github.revenge.plugins.PluginManifest
-import io.github.revenge.plugins.Version
-import io.github.revenge.plugins.VersionRange
+import io.github.revenge.plugins.*
 import io.github.revenge.xposed.tweaks.plugins.external.DiscoveryFailure
 import io.github.revenge.xposed.tweaks.plugins.external.forgetNativePluginLoader
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
