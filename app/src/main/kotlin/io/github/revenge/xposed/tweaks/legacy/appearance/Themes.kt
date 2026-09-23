@@ -38,7 +38,6 @@ data class Theme(
  * Patches Discord's [com.discord.theme.DarkerTheme] / [LightTheme] getters and
  * `ColorUtilsKt.getColorCompat` overloads with values read from `files/pyoncord/current-theme.json`.
  */
-@OptIn(ExperimentalSerializationApi::class)
 val themes by tweak {
     val log: Logger = this.log
     val themeFile = File(
@@ -86,7 +85,7 @@ val themes by tweak {
         }
     }
 
-    if (!rawColorMap.isNullOrEmpty()) {
+    if (rawColorMap.isNotEmpty()) {
         val getColorCompat = themeManager.method(
             "getColorCompat",
             Resources::class.java,
