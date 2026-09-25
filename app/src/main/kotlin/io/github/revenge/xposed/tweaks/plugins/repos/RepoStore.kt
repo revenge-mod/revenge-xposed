@@ -4,23 +4,21 @@ import android.util.AtomicFile
 import io.github.revenge.Logger
 import io.github.revenge.logger
 import io.github.revenge.xposed.RevengeJson
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import java.security.MessageDigest
 
 /**
- * Reserved identity of the built-in internal repository serving internal plugins.
- * It is not persisted, and not removable.
+ * Reserved identity of the built-in internal repository serving internal plugins. It is not persisted, and not removable.
  */
 internal const val INTERNAL_REPO_URL = "revenge://internal"
 
-/** One user-configured repository. */
 @Serializable
 internal data class UserRepo(
-    /** Absolute HTTPS URL of the repository root. Also the repository's identity. */
+    /** Absolute HTTP(s) URL of the repository root, and the repository's identity. */
     val url: String,
     val enabled: Boolean = true,
 )
@@ -84,12 +82,21 @@ internal object RepoStore {
         val dir = root ?: error("RepoStore not loaded")
 
         val seen = mutableSetOf<String>()
-        for (entry in entries) {
-            require(entry.url.startsWith("https://") || entry.url.startsWith("http://")) {
-                "Repository URL must be absolute: '${entry.url}'"
-            }
-            require(entry.url != INTERNAL_REPO_URL) { "Repository URL is reserved: '${entry.url}'" }
-            require(seen.add(entry.url)) { "Duplicate repository URL: '${entry.url}'" }
+        for ((url) in entries) {
+            if (!url.startsWith("https://") && !url.startsWith("http://")) throw PluginSystemError(
+                PluginErrorCodes.INVALID_ARGUMENT,
+                "Repository URL must be absolute: '$url'",
+            )
+
+            if (url == INTERNAL_REPO_URL) throw PluginSystemError(
+                PluginErrorCodes.NOT_ALLOWED,
+                "Repository URL is reserved: '$url'",
+            )
+
+            if (!seen.add(url)) throw PluginSystemError(
+                PluginErrorCodes.INVALID_ARGUMENT,
+                "Duplicate repository URL: '$url'",
+            )
         }
 
         val previous = repos.orEmpty()
@@ -97,7 +104,7 @@ internal object RepoStore {
         repos = entries
 
         // Drop caches of removed repos and null the provenance of plugins pinned to them.
-        // The installations stay, treated as sideloaded from now on.
+        // Installations are treated as sideloaded from now on.
         val removedUrls = previous.map { it.url } - entries.map { it.url }.toSet()
         for (removed in removedUrls) cacheDirFor(removed).deleteRecursively()
         SourcesStore.forgetRepos(removedUrls)
@@ -151,7 +158,7 @@ internal object RepoStore {
             atomic.finishWrite(fos)
         } catch (t: Throwable) {
             if (fos != null) atomic.failWrite(fos)
-            throw IOException("Failed to save repos config", t)
+            throw PluginSystemError(PluginErrorCodes.STORAGE_FAILED, "Failed to save repos config", t)
         }
     }
 }

@@ -18,8 +18,9 @@ import io.github.revenge.xposed.tweaks.legacy.appearance.fonts
 import io.github.revenge.xposed.tweaks.legacy.appearance.sysColors
 import io.github.revenge.xposed.tweaks.legacy.appearance.themes
 import io.github.revenge.xposed.tweaks.legacy.revengePayloadGlobal
-import io.github.revenge.xposed.tweaks.discordVersionRetriever
+import io.github.revenge.xposed.tweaks.plugins.pluginInstallMethods
 import io.github.revenge.xposed.tweaks.plugins.pluginLoader
+import io.github.revenge.xposed.tweaks.plugins.pluginMethods
 import io.github.revenge.xposed.tweaks.plugins.pluginStates
 import io.github.revenge.xposed.tweaks.plugins.repos.pluginRepos
 
@@ -47,6 +48,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
 
         // Async updater
         revengeUpdater,
+        revengeBundleManifest,
 
         // Consumers
         discordDevSupport,
@@ -55,6 +57,8 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         themes,
         sysColors,
         pluginLoader,
+        pluginMethods,
+        pluginInstallMethods,
         revengeScriptLoader,
         revengePayloadGlobal,
     )

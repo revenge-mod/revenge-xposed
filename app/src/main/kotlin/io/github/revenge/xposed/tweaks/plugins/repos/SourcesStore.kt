@@ -2,23 +2,25 @@ package io.github.revenge.xposed.tweaks.plugins.repos
 
 import android.util.AtomicFile
 import io.github.revenge.xposed.RevengeJson
+import io.github.revenge.xposed.tweaks.plugins.PluginErrorCodes
+import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 
 /**
- * Where an installed plugin came from.
+ * Where an installed plugin came from, and how it should be updated.
  *
- * - `repo == null`: Sideloaded. Never offered repo updates.
- * - `repo != null`: Installed from that repository. Updates must be fetched from it.
+ * - `repo == null`: Sideloaded. No repo updates.
+ * - `repo != null`: Installed from that repository. Updates are fetched from it.
  */
 @Serializable
 internal data class PluginSource(
     val repo: String? = null,
     /** The channel followed for updates (`latest` unless the user opted into another). */
     val channel: String = REPO_CHANNEL_LATEST,
+    /** Keep the installed version, skip update checks, and refuse to update it to satisfy something else. */
+    val held: Boolean = false,
 )
 
 /** sources.json. */
@@ -30,9 +32,7 @@ private data class SourcesConfig(
 
 private const val SOURCES_CONFIG_FORMAT = 1
 
-/**
- * Persistence for plugin provenance keyed by plugin ID, `files/revenge/plugins/repos/sources.json`.
- */
+/** Persistence for plugin provenance keyed by plugin ID, `files/revenge/plugins/repos/sources.json`. */
 internal object SourcesStore {
     private const val REPOS_DIR = "files/revenge/plugins/repos"
     private const val SOURCES_FILE = "sources.json"
@@ -66,6 +66,21 @@ internal object SourcesStore {
         persist(updated)
     }
 
+    /** Records where [pluginId] was just installed from, keeping every other configuration intact. */
+    @Synchronized
+    fun record(pluginId: String, repo: String?, channel: String) {
+        val existing = all()[pluginId]
+        set(pluginId, existing?.copy(repo = repo, channel = channel) ?: PluginSource(repo, channel))
+    }
+
+    /** Holds [pluginId] at its installed version, or resumes following its channel. Returns the new record. */
+    @Synchronized
+    fun setHeld(pluginId: String, held: Boolean): PluginSource {
+        val updated = (all()[pluginId] ?: PluginSource()).copy(held = held)
+        set(pluginId, updated)
+        return updated
+    }
+
     @Synchronized
     fun remove(pluginId: String) {
         val current = all()
@@ -73,15 +88,13 @@ internal object SourcesStore {
         persist(current - pluginId)
     }
 
-    /**
-     * Removes provenance and clears the repo field for every plugin pinned to one of [repoUrls].
-     */
+    /** Removes provenance and clears the repo field for every plugin pinned to one of [repoUrls]. */
     @Synchronized
     fun forgetRepos(repoUrls: Collection<String>) {
         if (repoUrls.isEmpty()) return
         val current = all()
         val updated = current.mapValues { (_, source) ->
-            if (source.repo in repoUrls) PluginSource(repo = null, channel = source.channel) else source
+            if (source.repo in repoUrls) source.copy(repo = null) else source
         }
         if (updated != current) persist(updated)
     }
@@ -96,7 +109,7 @@ internal object SourcesStore {
             atomic.finishWrite(fos)
         } catch (t: Throwable) {
             if (fos != null) atomic.failWrite(fos)
-            throw IOException("Failed to save plugin sources", t)
+            throw PluginSystemError(PluginErrorCodes.STORAGE_FAILED, "Failed to save plugin sources", t)
         }
         sources = updated
     }

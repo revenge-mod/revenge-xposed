@@ -8,6 +8,7 @@ object RevengeConstants {
     const val FILES_DIR = "files/pyoncord"
     const val CACHE_DIR = "cache/revenge"
     const val MAIN_SCRIPT_FILE = "bundle.js"
+    const val BUNDLE_MANIFEST_FILE = "manifest.json"
     const val PRELOADS_DIR = "preloads"
 
     const val LOADER_NAME = "RevengeXposed"
