@@ -18,21 +18,22 @@ private val log = logger("bundledPlugins")
  * Native discovers external plugins and handles dependency resolution before JS starts, so without this,
  * it cannot tell an ID belonging to a bundled plugin from one that does not exist, which causes it to drop any
  * external plugin that depends on one.
- *
- * Even though nothing here is enabled by default, native registers them regardless, making them linkable by dependents.
- * JS later sets each plugin's default flags into the slot when its implementation registers.
  */
 internal fun bundledPlugins(bundleManifest: BundleManifest): List<PluginFactory> {
     val bundleVersion = Version.parse(bundleManifest.version)
 
     return bundleManifest.plugins.mapNotNull { entry ->
-        runCatching { internalPlugin(entry.toPluginManifest(bundleVersion), BUNDLED_PLUGIN_FLAGS) {} }
+        runCatching { internalPlugin(entry.toPluginManifest(bundleVersion), entry.internalFlags()) {} }
             .onFailure { log.e("Skipping bundled plugin '${entry.id}'", it) }
             .getOrNull()
     }
 }
 
-private val BUNDLED_PLUGIN_FLAGS = setOf(InternalPluginFlags.INTERNAL)
+private fun BundleManifest.Plugin.internalFlags() = buildSet {
+    add(InternalPluginFlags.INTERNAL)
+    if (essential) add(InternalPluginFlags.ESSENTIAL)
+    if (enabledByDefault) add(InternalPluginFlags.ENABLED_BY_DEFAULT)
+}
 
 // JS will fill these in later.
 private fun BundleManifest.Plugin.toPluginManifest(version: Version): PluginManifest {

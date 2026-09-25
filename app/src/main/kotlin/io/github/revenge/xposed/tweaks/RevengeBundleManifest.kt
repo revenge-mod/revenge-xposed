@@ -10,14 +10,21 @@ import kotlinx.serialization.Serializable
 private const val MODULE_MANIFEST_FILE = "manifest.json"
 private lateinit var logger: Logger
 
+const val BUNDLE_MANIFEST_FORMAT = 1
+
 @Serializable
 data class BundleManifest(
+    val format: Int = BUNDLE_MANIFEST_FORMAT,
     val version: String,
     val plugins: List<Plugin> = emptyList(),
 ) {
     @Serializable
     data class Plugin(
         val id: String,
+        /** Cannot be turned off. Implies [enabledByDefault]. */
+        val essential: Boolean = false,
+        /** On until the user says otherwise. */
+        val enabledByDefault: Boolean = false,
         val dependencies: Map<String, PluginDependency> = emptyMap(),
     )
 
@@ -54,7 +61,7 @@ val revengeBundleManifest by tweak {
         }
 
     log.w("Using fallback manifest...")
-    bundleManifest = BundleManifest(API_VERSION.toString(), emptyList())
+    bundleManifest = BundleManifest(BUNDLE_MANIFEST_FORMAT, API_VERSION.toString(), emptyList())
 }
 
 private fun setBundleManifest(json: String): Boolean {
