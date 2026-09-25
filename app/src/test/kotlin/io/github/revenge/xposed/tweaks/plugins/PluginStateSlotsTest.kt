@@ -167,14 +167,6 @@ class PluginStateSlotsTest {
     }
 
     @Test
-    fun `an internal slot can never be made sticky`() {
-        assertFailsWith<PluginSystemError> {
-            PluginStatesStore.setActiveSlot(dataDir.absolutePath, PluginStatesStore.DEFAULTS_SLOT, oneShot = false)
-        }
-        assertFalse(File(statesDir, "active").exists())
-    }
-
-    @Test
     fun `slot ids that escape the directory are rejected`() {
         for (id in listOf("../evil", "a/b", ".hidden", "")) {
             assertFailsWith<IllegalArgumentException>("expected '$id' to be rejected") {

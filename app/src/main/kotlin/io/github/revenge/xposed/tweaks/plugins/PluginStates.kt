@@ -392,7 +392,7 @@ object PluginStatesStore {
             val dir = statesDir(dataDir)
 
             activeSlotId = readSlotId(File(dir, ACTIVE_FILE))
-                ?.takeIf { runCatching { requireValidSlotId(it) }.isSuccess && !isInternalSlotId(it) }
+                ?.takeIf { runCatching { requireValidSlotId(it) }.isSuccess }
                 ?: PRIMARY_SLOT
 
             // Consumed before any plugin loads, so a boot crash can't trap the user in it.
@@ -411,14 +411,19 @@ object PluginStatesStore {
         }
     }
 
+    private fun makeInternalSlot(slotId: String) = when (slotId) {
+        ":defaults" -> PluginStateSlot(slotId, persistent = false, file = null)
+        else -> throw IllegalArgumentException("No such internal slot: $slotId")
+    }
+
     private fun loadSlot(dataDir: String, slotId: String): PluginStateSlot =
-        if (isInternalSlotId(slotId)) PluginStateSlot(slotId, persistent = false, file = null)
+        if (isInternalSlotId(slotId)) makeInternalSlot(slotId)
         else PluginStateSlot.load(slotId, File(slotsDir(dataDir), slotId), log, ::writeNow)
 
     /** Persistent slots on disk, with [PRIMARY_SLOT] always present. */
     fun persistentSlotIds(dataDir: String): List<String> {
         val onDisk = slotsDir(dataDir).list()?.filter {
-            runCatching { requireValidSlotId(it) }.isSuccess && !isInternalSlotId(it)
+            runCatching { requireValidSlotId(it) }.isSuccess
         }.orEmpty()
         return (listOf(PRIMARY_SLOT) + onDisk).distinct()
     }
@@ -430,10 +435,6 @@ object PluginStatesStore {
      */
     fun setActiveSlot(dataDir: String, slotId: String, oneShot: Boolean) {
         requireValidSlotId(slotId)
-        if (isInternalSlotId(slotId) && !oneShot) throw PluginSystemError(
-            PluginErrorCodes.NOT_ALLOWED,
-            "Slot '$slotId' is internal and can only be set for one boot",
-        )
 
         val dir = statesDir(dataDir)
         File(dir, if (oneShot) NEXT_FILE else ACTIVE_FILE).writeText(slotId)
