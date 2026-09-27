@@ -17,6 +17,7 @@ import io.github.revenge.reloadApp
 import io.github.revenge.xposed.*
 import io.github.revenge.xposed.api.registerNativeMethod
 import io.github.revenge.xposed.tweaks.RevengeUpdater
+import io.github.revenge.xposed.tweaks.base.withAppActivity
 import io.github.revenge.xposed.tweaks.plugins.PluginStatesStore
 import java.io.File
 
@@ -128,35 +129,41 @@ fun recoveryGestureHook() {
     var holdRunnable: Runnable? = null
     val handler = Handler(Looper.getMainLooper())
 
-    val hook = Activity::class.java.method("dispatchTouchEvent", MotionEvent::class.java).hook {
-        before {
-            val event = param.args[0] as MotionEvent
-            val activity = param.thisObject as Activity
+    withAppActivity {
+        val hook = Activity::class.java.method("dispatchTouchEvent", MotionEvent::class.java).hook {
+            before {
+                val event = param.args[0] as MotionEvent
+                val activity = param.thisObject as Activity
 
-            if (event.pointerCount == 2) {
-                when (event.actionMasked) {
-                    // 3s hold timer when 2nd finger touches screen
-                    MotionEvent.ACTION_POINTER_DOWN -> {
-                        handler.postDelayed({
-                            Toast.makeText(activity, "Keep holding to trigger Recovery Options...", Toast.LENGTH_SHORT)
-                                .show()
-                        }, 1500)
+                if (event.pointerCount == 2) {
+                    when (event.actionMasked) {
+                        // 3s hold timer when 2nd finger touches screen
+                        MotionEvent.ACTION_POINTER_DOWN -> {
+                            handler.postDelayed({
+                                Toast.makeText(
+                                    activity,
+                                    "Keep holding to trigger Recovery Options...",
+                                    Toast.LENGTH_SHORT
+                                )
+                                    .show()
+                            }, 1500)
 
-                        holdRunnable = { showRecoveryAlert(activity) }
-                        handler.postDelayed(holdRunnable, 3000)
-                    }
+                            holdRunnable = { showRecoveryAlert(activity) }
+                            handler.postDelayed(holdRunnable, 3000)
+                        }
 
-                    // Lifted finger early
-                    MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                        holdRunnable?.let { handler.removeCallbacks(it) }
+                        // Lifted finger early
+                        MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
+                            holdRunnable?.let { handler.removeCallbacks(it) }
+                        }
                     }
                 }
             }
         }
-    }
 
-    // Stop listening after 3s
-    handler.postDelayed({
-        hook.unhook()
-    }, 3000)
+        // Stop listening after 3s
+        handler.postDelayed({
+            hook.unhook()
+        }, 3000)
+    }
 }
