@@ -76,8 +76,7 @@ internal fun loadPlugin(
     val manifest = factory.manifest
     val graph = pluginRegistry.dependencies
 
-    // Running satisfied dependencies. Some dependencies may've been stopped prior to this.
-    val chain = graph.satisfiedDependencies(manifest.id).filterTo(mutableSetOf()) { it in loaded }
+    val chain = dependencyChainOf(manifest.id)
 
     // *Should* be unreachable, since disabling a plugin cascades to its required dependents.
     // Regardless, check is required for safety so the plugin won't immediately blow up on missing dependencies.
@@ -153,6 +152,10 @@ internal suspend fun stopPlugin(pluginId: String) {
     stopNativePlugin(pluginId)
 }
 
+/** Running satisfied dependencies of [pluginId] that it can link against. */
+private fun dependencyChainOf(pluginId: String): Set<String> =
+    pluginRegistry.dependencies.satisfiedDependencies(pluginId).filterTo(mutableSetOf()) { it in loaded }
+
 /** Running plugins whose class loader chains [pluginId] transitively. */
 private fun chainedDependentsOf(pluginId: String): Set<String> {
     val found = mutableSetOf(pluginId)
@@ -194,14 +197,22 @@ internal fun stopNativePlugin(pluginId: String) {
  * Starts a plugin's native half, stopping it first if it is already running.
  *
  * [loadPlugin] recomputes the class loader chain, so a restart also relinks when the dependency set changes.
+ * Relinking replaces the plugin's class loader, so running dependents are stopped first.
+ * Plugin restarts will be managed by JS.
  *
  * Unknown IDs are ignored because it may be a JS-only plugin.
  *
  * @throws PluginSystemError with [PluginErrorCodes.RELOAD_REQUIRED] when the stop asks for a reload. A plugin which couldn't undo itself must not be resumed.
  */
 context(host: HostScope)
-internal fun restartPlugin(pluginId: String) {
+internal suspend fun restartPlugin(pluginId: String) {
     val factory = pluginRegistry.factories[pluginId] ?: return
+
+    if (factory.wouldRelink(dependencyChainOf(pluginId)))
+        for (dependentId in chainedDependentsOf(pluginId)) {
+            pluginLog.i("Stopping $dependentId: $pluginId is relinking, which replaces the classes it chained")
+            stopPlugin(dependentId)
+        }
 
     stopNativePlugin(pluginId)
 

@@ -3,6 +3,7 @@ package io.github.revenge.xposed.tweaks.plugins
 import io.github.revenge.plugins.*
 import io.github.revenge.xposed.tweaks.plugins.external.DiscoveryFailure
 import io.github.revenge.xposed.tweaks.plugins.external.forgetNativePluginLoader
+import io.github.revenge.xposed.tweaks.plugins.external.nativePluginLoaders
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
 
 /** [PluginManifest] + [load] method to get [PluginBuilder] + internal flags for registration. */
@@ -18,14 +19,23 @@ internal class PluginFactory(
     var chainedDependencies: Set<String>? = null
         private set
 
+    /** The class loaders of [chainedDependencies] when the code was last [load]ed. */
+    private var chainedLoaders: Map<String, ClassLoader?>? = null
+
     private var builder: PluginBuilder? = null
 
-    /** Builds the plugin with [chain], relinking its code only if chain chained since the last build. */
+    private fun loadersOf(chain: Set<String>) = chain.associateWith { nativePluginLoaders[it] }
+
+    /** Whether [build] with [chain] would relink, giving this plugin a new class loader. */
+    fun wouldRelink(chain: Set<String>) = builder == null || chainedLoaders != loadersOf(chain)
+
+    /** Builds the plugin with [chain], relinking its code only if the chain changed since the last build. */
     fun build(chain: Set<String>): Plugin {
-        val current = builder?.takeIf { chainedDependencies == chain }
+        val current = builder?.takeUnless { wouldRelink(chain) }
             ?: load(chain).also {
                 builder = it
                 chainedDependencies = chain
+                chainedLoaders = loadersOf(chain)
             }
 
         return current.build(manifest)

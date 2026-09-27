@@ -3,6 +3,8 @@ package io.github.revenge.xposed.tweaks.plugins
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.Version
 import io.github.revenge.plugins.plugin
+import io.github.revenge.xposed.tweaks.plugins.external.nativePluginLoaders
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -13,6 +15,9 @@ import kotlin.test.assertNull
  */
 class PluginFactoryTest {
     private val manifest = PluginManifest("com.example.test", "Test", "", "", version = Version.parse("1.0.0"))
+
+    @AfterTest
+    fun tearDown() = nativePluginLoaders.clear()
 
     /** Counts how many times the plugin's code was loaded. */
     private fun countingFactory(loads: () -> Unit) = PluginFactory(manifest) {
@@ -51,6 +56,22 @@ class PluginFactoryTest {
 
         assertEquals(2, loads)
         assertEquals(emptySet(), factory.chainedDependencies)
+    }
+
+    @Test
+    fun `a dependency that relinks reloads the plugin`() {
+        var loads = 0
+        val factory = countingFactory { loads++ }
+        val chain = setOf("com.example.dep")
+
+        nativePluginLoaders["com.example.dep"] = object : ClassLoader() {}
+        factory.build(chain)
+
+        // New class loader. Rebuilding should relink.
+        nativePluginLoaders["com.example.dep"] = object : ClassLoader() {}
+        factory.build(chain)
+
+        assertEquals(2, loads)
     }
 
     @Test
