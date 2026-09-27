@@ -18,7 +18,9 @@ import io.github.revenge.xposed.*
 import io.github.revenge.xposed.api.registerNativeMethod
 import io.github.revenge.xposed.tweaks.RevengeUpdater
 import io.github.revenge.xposed.tweaks.base.withAppActivity
+import io.github.revenge.xposed.tweaks.crashRecoveryTriggered
 import io.github.revenge.xposed.tweaks.plugins.PluginStatesStore
+import io.github.revenge.xposed.tweaks.resetCrashCount
 import java.io.File
 
 private val manifest = PluginManifest(
@@ -39,7 +41,7 @@ internal val recoveryPlugin =
             }
 
             addBridgeMethods()
-            recoveryGestureHook()
+            recoveryHook()
         }
     }
 
@@ -125,11 +127,20 @@ fun PluginScope.addBridgeMethods() {
     }
 }
 
-fun recoveryGestureHook() {
+fun recoveryHook() {
     var holdRunnable: Runnable? = null
     val handler = Handler(Looper.getMainLooper())
 
     withAppActivity {
+        if (crashRecoveryTriggered) {
+            AlertDialog.Builder(it)
+                .setTitle("Booted in Recovery Mode")
+                .setMessage("Revenge detected consecutive crashes and has booted into Recovery Mode.")
+                .setPositiveButton(android.R.string.ok) { d, _ -> d.dismiss() }
+                .setNeutralButton("Exit Recovery Mode") { _, _ -> reloadApp() }
+                .show()
+        }
+
         val hook = Activity::class.java.method("dispatchTouchEvent", MotionEvent::class.java).hook {
             before {
                 val event = param.args[0] as MotionEvent
@@ -164,6 +175,19 @@ fun recoveryGestureHook() {
         // Stop listening after 3s
         handler.postDelayed({
             hook.unhook()
+
+            // Give users up to 2 extra seconds (5 - 3) to press the dialog options
+            handler.postDelayed({
+                resetCrashCount()
+            }, 5000)
         }, 3000)
+
+        // Intentional exit, so we clear the crash count
+        Activity::class.java.method("onDestroy").hook {
+            before {
+                val activity = param.thisObject as Activity
+                if (activity.isFinishing) resetCrashCount()
+            }
+        }
     }
 }

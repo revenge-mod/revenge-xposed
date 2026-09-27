@@ -51,6 +51,7 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
         revengeBundleManifest,
 
         // Consumers
+        recoveryCompanion,
         discordDevSupport,
         additionalBridgeMethods,
         fonts,
