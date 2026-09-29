@@ -247,7 +247,8 @@ val pluginInstallMethods by tweak {
 
                 // Compare against a pending on-disk update if there is one, so it isn't re-offered.
                 val current = pluginRegistry.pendingUpdates[id] ?: installedVersion
-                if (available > current) add(
+                // If newer version is available, or installed hash is set but isn't the same as remote hash.
+                if (available > current || source.hash?.let { plugin.versions[target]?.sha256 != it } == true) add(
                     mapOf(
                         "id" to id,
                         "installed" to current.toString(),
@@ -280,7 +281,7 @@ private fun handleInstallResult(result: InstallResult) {
 
         is InstallResult.Updated -> {
             pluginRegistry.pendingUpdates[result.manifest.id] = result.version
-            runCatching { SourcesStore.set(result.manifest.id, PluginSource(repo = null)) }
+            runCatching { SourcesStore.set(result.manifest.id, PluginSource(repo = null, hash = null)) }
                 .onFailure { pluginLog.e("Failed to record plugin source", it) }
 
             emitPluginEvent(
