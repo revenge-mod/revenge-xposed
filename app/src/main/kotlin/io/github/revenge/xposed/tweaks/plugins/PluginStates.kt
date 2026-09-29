@@ -4,6 +4,7 @@ import android.os.Build
 import io.github.revenge.Logger
 import io.github.revenge.bridge.asDelegate
 import io.github.revenge.logger
+import io.github.revenge.xposed.api.HostScope
 import io.github.revenge.xposed.ensureDir
 import io.github.revenge.xposed.tweak
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +59,7 @@ val pluginStates by tweak {
      * `states.update(slot, id, PluginStates): PluginStates`
      *
      * JS reporting flags it changed.
+     * Writes to the slot directly since we already return the new state here and won't need to wait for emit.
      */
     pluginSystemMethod("revenge.plugins.states.update") { args ->
         val argv = args.asDelegate()
@@ -139,13 +141,13 @@ class PluginStateSlot(
 ) {
     private val flows = HashMap<String, MutableStateFlow<Set<PluginFlags>>>()
 
-    /** Plugin IDs with an entry. A flow alone is not an entry, only [write] makes one. */
-    private val present = HashSet<String>()
+    /** What each entry was last written as via [write]. */
+    private val recorded = HashMap<String, Set<PluginFlags>>()
 
     init {
         for ((pluginId, flags) in initial) {
             flows[pluginId] = MutableStateFlow(flags)
-            present += pluginId
+            recorded[pluginId] = flags
         }
     }
 
@@ -161,27 +163,32 @@ class PluginStateSlot(
     /** Flags of the plugin's entry, or `null` when it has none. */
     @Synchronized
     fun entryFlags(pluginId: String): Set<PluginFlags>? =
-        if (pluginId in present) flows[pluginId]?.value else null
+        if (pluginId in recorded) flows[pluginId]?.value else null
 
     @Synchronized
-    fun hasPlugin(pluginId: String): Boolean = pluginId in present
+    fun hasPlugin(pluginId: String): Boolean = pluginId in recorded
 
     @Synchronized
     fun isPluginEnabled(pluginId: String): Boolean =
         PluginFlags.ENABLED in (entryFlags(pluginId) ?: return false)
 
-    /** Writes an entry, and pushes to the live flow, so a running plugin sees it. */
-    fun write(pluginId: String, flags: Set<PluginFlags>) {
+    /**
+     * Writes an entry, and pushes to the live flow, so a running plugin sees it.
+     * @return Whether anything has changed.
+     */
+    fun write(pluginId: String, flags: Set<PluginFlags>): Boolean {
         synchronized(this) {
+            if (pluginId in recorded && recorded[pluginId] == flags) return false
+            recorded[pluginId] = flags
             flows.getOrPut(pluginId) { MutableStateFlow(flags) }.value = flags
-            present += pluginId
         }
         onChanged()
+        return true
     }
 
     fun remove(pluginId: String) {
         synchronized(this) {
-            present -= pluginId
+            recorded.remove(pluginId)
             flows.remove(pluginId)
         }
         onChanged()
@@ -189,7 +196,7 @@ class PluginStateSlot(
 
     @Synchronized
     fun snapshot(): Map<String, Set<PluginFlags>> =
-        present.associateWith { flows[it]?.value ?: emptySet() }
+        recorded.keys.associateWith { flows[it]?.value ?: emptySet() }
 
     /** Persists the entries. No-op for an ephemeral slots. */
     fun save() {
@@ -495,4 +502,17 @@ object PluginStatesStore {
     fun toJSPayload(): Map<String, Any> = slots.mapValues { (_, slot) ->
         slot.snapshot().mapValues { it.value.toJSPayload() }
     }
+}
+
+
+/** Writes a plugin's flags into [slot] and notifies JS with [sendStateToJS] if something changed. */
+context(host: HostScope)
+internal suspend fun writeSlotFlags(slot: PluginStateSlot, pluginId: String, flags: Set<PluginFlags>) {
+    if (slot.write(pluginId, flags)) sendStateToJS(slot.id, pluginId, flags)
+}
+
+/** Writes a plugin's flags into [slot] and notifies JS with [dispatchStateToJS] if something changed. */
+context(host: HostScope)
+internal fun dispatchSlotFlags(slot: PluginStateSlot, pluginId: String, flags: Set<PluginFlags>) {
+    if (slot.write(pluginId, flags)) dispatchStateToJS(slot.id, pluginId, flags)
 }

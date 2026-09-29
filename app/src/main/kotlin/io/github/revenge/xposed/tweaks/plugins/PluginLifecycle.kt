@@ -106,8 +106,7 @@ internal fun loadPlugin(
 
     // `drop(1)` skips the initial load so we don't re-persist the values we just loaded.
     val persistJob = flags.drop(1).onEach { newFlags ->
-        bootSlot.write(manifest.id, newFlags)
-        sendStateToJS(bootSlot.id, manifest.id, newFlags)
+        writeSlotFlags(bootSlot, manifest.id, newFlags)
     }.launchIn(pluginJobScope)
 
     val errorSyncJob = scope.errors.onEach {
@@ -133,7 +132,7 @@ internal fun loadPlugin(
 
 /**
  * Stops a running plugin, cascading to any running dependents that require it.
- * 
+ *
  * JS is asked to stop first, so it can stop its own half and clean up any state before native tears down the plugin.
  * If JS refuses to stop after a timeout, native will still stop the plugin regardless.
  */
@@ -185,8 +184,9 @@ internal fun stopNativePlugin(pluginId: String) {
         entry.scope.errors.tryEmit(e)
         pluginLog.e("Plugin $pluginId threw in stop()", e)
     } finally {
-        // stop() may have changed flags (requireReload), we need to sync before stopping the job.
-        dispatchStateToJS(PluginStatesStore.bootSlotId, pluginId, entry.scope.flags.value)
+        // stop() may have changed flags (requireReload), we need to sync before stopping the jobs.
+        // If we accidentally dispatch twice, the second call will be a no-op anyways.
+        dispatchSlotFlags(PluginStatesStore.boot, pluginId, entry.scope.flags.value)
 
         entry.persistJob.cancel()
         entry.errorSyncJob.cancel()
@@ -282,8 +282,12 @@ internal fun pluginEnablementFlags(requiredByUser: Boolean) = buildSet {
 }
 
 context(host: HostScope)
-internal fun enablePlugin(pluginId: String, requiredByUser: Boolean) =
-    writeActiveSlotFlags(pluginId, pluginEnablementFlags(requiredByUser))
+internal fun enablePlugin(pluginId: String, requiredByUser: Boolean) {
+    // On a normal boot the active slot *is* the running session, so replacing the entry outright would strip
+    // session-only flags (the ones with no bit, which never reach disk) off a plugin that is already running.
+    val sessionOnly = PluginStatesStore.active.entryFlags(pluginId).orEmpty().filter { it.bit == 0 }
+    writeActiveSlotFlags(pluginId, sessionOnly + pluginEnablementFlags(requiredByUser))
+}
 
 private fun isEssential(pluginId: String): Boolean =
     pluginRegistry.factories[pluginId]?.let { InternalPluginFlags.ESSENTIAL in it.internalFlags } ?: false
@@ -301,9 +305,7 @@ private fun isPluginEnabled(pluginId: String, factory: PluginFactory?): Boolean 
 /** Writes the slot the user chose, which is what applies on the next boot, and tells JS. */
 context(host: HostScope)
 internal fun writeActiveSlotFlags(pluginId: String, flags: Iterable<PluginFlags>) {
-    val newFlags = flags.toSet()
-    PluginStatesStore.active.write(pluginId, newFlags)
-    dispatchStateToJS(PluginStatesStore.activeSlotId, pluginId, newFlags)
+    dispatchSlotFlags(PluginStatesStore.active, pluginId, flags.toSet())
 }
 
 /** Drops the plugin's entry from the slot this boot runs on. */

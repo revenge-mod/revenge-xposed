@@ -64,6 +64,22 @@ class PluginStateSlotsTest {
     }
 
     @Test
+    fun `writes see flags a plugin set on itself`() {
+        load()
+        val slot = PluginStatesStore.active
+        slot.write("com.example.plugin", setOf(PluginFlags.ENABLED))
+
+        val flow = slot.flagsOf("com.example.plugin")
+        flow.value += PluginFlags.PENDING_RELOAD
+
+        assertTrue(
+            slot.write("com.example.plugin", flow.value),
+            "writes must see flags a plugin set on itself, or it would cause state desync",
+        )
+        assertFalse(slot.write("com.example.plugin", flow.value), "but only once")
+    }
+
+    @Test
     fun `a persistent slot round-trips through its file`() {
         load()
         PluginStatesStore.active.write("com.example.plugin", setOf(PluginFlags.ENABLED, PluginFlags.REQUIRED_BY_USER))
