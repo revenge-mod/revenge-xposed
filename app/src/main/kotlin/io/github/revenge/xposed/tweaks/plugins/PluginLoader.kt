@@ -20,7 +20,7 @@ val pluginLoader by tweak {
 
     // Register default provenances.
     val sources = SourcesStore.ensureLoaded(appInfo.dataDir).toMutableMap()
-    for ((id, source) in defaultSourcesToSeed(internalPlugins, sources)) {
+    for ((id, source) in defaultSourcesToSeed(internalPlugins + bundled, sources)) {
         runCatching { SourcesStore.set(id, source) }
             .onSuccess { sources[id] = source }
             .onFailure { pluginLog.e("Failed to record stub source for $id", it) }

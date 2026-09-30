@@ -17,7 +17,16 @@ enum class InternalPluginFlags {
 internal fun internalPlugin(
     manifest: PluginManifest,
     flags: Set<InternalPluginFlags> = setOf(InternalPluginFlags.INTERNAL),
-    defaultSource: PluginSource? = null,
+    block: PluginBuilder.() -> Unit,
+): PluginFactory {
+    val builder = plugin(block)
+    return PluginFactory(manifest.withReservedDependencies(), flags) { builder }
+}
+
+private fun internalPlugin(
+    manifest: PluginManifest,
+    flags: Set<InternalPluginFlags> = setOf(InternalPluginFlags.INTERNAL),
+    defaultSource: PluginSource?,
     block: PluginBuilder.() -> Unit,
 ): PluginFactory {
     val builder = plugin(block)

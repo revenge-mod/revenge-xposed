@@ -15,7 +15,7 @@ import java.io.FileOutputStream
  * - `repo != null`: Installed from that repository. Updates are fetched from it.
  */
 @Serializable
-internal data class PluginSource(
+data class PluginSource(
     val repo: String? = null,
     /** Hash of the artifact installed. */
     val hash: String? = null,

@@ -5,6 +5,7 @@ import io.github.revenge.Logger
 import io.github.revenge.plugins.API_VERSION
 import io.github.revenge.xposed.RevengeJson
 import io.github.revenge.xposed.tweak
+import io.github.revenge.xposed.tweaks.plugins.repos.PluginSource
 import kotlinx.serialization.Serializable
 
 private const val MODULE_MANIFEST_FILE = "manifest.json"
@@ -26,6 +27,7 @@ data class BundleManifest(
         /** On until the user says otherwise. */
         val enabledByDefault: Boolean = false,
         val dependencies: Map<String, PluginDependency> = emptyMap(),
+        val defaultSource: PluginSource? = null,
     )
 
     @Serializable

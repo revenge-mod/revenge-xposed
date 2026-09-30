@@ -23,7 +23,20 @@ internal fun bundledPlugins(bundleManifest: BundleManifest): List<PluginFactory>
     val bundleVersion = Version.parse(bundleManifest.version)
 
     return bundleManifest.plugins.mapNotNull { entry ->
-        runCatching { internalPlugin(entry.toPluginManifest(bundleVersion), entry.internalFlags()) {} }
+        runCatching {
+            val manifest = entry.toPluginManifest(bundleVersion)
+            val flags = entry.internalFlags()
+
+            if (entry.defaultSource != null) {
+                stubPlugin(
+                    manifest,
+                    entry.defaultSource,
+                    flags,
+                ) {}
+            } else {
+                internalPlugin(manifest, flags) {}
+            }
+        }
             .onFailure { log.e("Skipping bundled plugin '${entry.id}'", it) }
             .getOrNull()
     }
