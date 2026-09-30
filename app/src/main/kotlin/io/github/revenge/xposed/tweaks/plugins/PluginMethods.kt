@@ -4,6 +4,7 @@ import io.github.revenge.bridge.asDelegate
 import io.github.revenge.xposed.tweak
 import io.github.revenge.xposed.tweaks.plugins.external.requireValidPluginId
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
+import io.github.revenge.xposed.tweaks.plugins.internal.internalPluginOf
 import io.github.revenge.xposed.tweaks.plugins.repos.SourcesStore
 import java.io.File
 
@@ -82,8 +83,21 @@ val pluginMethods by tweak {
             .onFailure { pluginLog.e("Failed to remove plugin source for $pluginId", it) }
 
         pluginLog.i("Uninstalled plugin: $pluginId")
+
+        // Uninstalling updates restores the internal plugin, registered like a fresh install.
+        val restored = internalPluginOf(pluginId)?.let { stub ->
+            pluginRegistry.add(stub)
+            stub.defaultSource?.let { source ->
+                runCatching { SourcesStore.set(pluginId, source) }
+                    .onFailure { pluginLog.e("Failed to record stub source for $pluginId", it) }
+            }
+
+            pluginLog.i("Restored internal plugin: $pluginId")
+            stub.toJSPayload(source = SourcesStore[pluginId])
+        }
+
         emitDependencyGraphUpdate()
-        null
+        mapOf("restored" to restored)
     }
 
     pluginSystemAsyncMethod("revenge.plugins.setEnabled") { args ->
@@ -134,7 +148,8 @@ val pluginMethods by tweak {
 
         val factory = pluginRegistry.factories[pluginId]
             ?: throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "Unknown plugin: '$pluginId'")
-        if (InternalPluginFlags.INTERNAL in factory.internalFlags)
+        // Internals with provenance (stubs) update through their repository.
+        if (InternalPluginFlags.INTERNAL in factory.internalFlags && SourcesStore[pluginId] == null)
             throw PluginSystemError(
                 PluginErrorCodes.NOT_ALLOWED,
                 "Plugin $pluginId is internal and updates with Revenge itself",

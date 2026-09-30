@@ -58,6 +58,8 @@ private val pendingInstalls = mutableMapOf<String, StagedPlugin>()
 context(host: HostScope)
 internal fun promptInstallPlugin(
     installedVersion: (String) -> Version?,
+    /** Throws when the staged plugin must not be installed. */
+    requireInstallable: (String) -> Unit,
     onReady: (Result<InstallPrompt>) -> Unit,
 ) {
     if (!pickZipHooked) {
@@ -98,6 +100,13 @@ internal fun promptInstallPlugin(
                 val staged = activity.contentResolver.openInputStream(uri)
                     ?.use { extractPluginZip(it, root, "$CONFIRM_TMP_PREFIX$token") }
                     ?: throw PluginSystemError(PluginErrorCodes.STORAGE_FAILED, "Unable to open $uri")
+
+                try {
+                    requireInstallable(staged.manifest.id)
+                } catch (e: Throwable) {
+                    staged.dir.deleteRecursively()
+                    throw e
+                }
 
                 pendingInstalls[token] = staged
                 InstallPrompt(token, staged.manifest, replaces = installedVersion(staged.manifest.id))

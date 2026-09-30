@@ -8,12 +8,17 @@ import io.github.revenge.xposed.tweaks.plugins.external.InstallResult
 import io.github.revenge.xposed.tweaks.plugins.external.confirmPluginInstall
 import io.github.revenge.xposed.tweaks.plugins.external.promptInstallPlugin
 import io.github.revenge.xposed.tweaks.plugins.external.validatedPluginIcon
+import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
 import io.github.revenge.xposed.tweaks.plugins.repos.*
 import kotlinx.coroutines.sync.withLock
 
 val pluginInstallMethods by tweak {
     pluginSystemMethod("revenge.plugins.installFile") {
-        promptInstallPlugin({ id -> pluginRegistry.factories[id]?.manifest?.version }) { result ->
+        SourcesStore.ensureLoaded(appInfo.dataDir)
+        promptInstallPlugin(
+            installedVersion = { id -> pluginRegistry.factories[id]?.manifest?.version },
+            requireInstallable = ::requireReplaceable,
+        ) { result ->
             result.fold(
                 // Emit a ready event and wait for confirmation.
                 onSuccess = { prompt ->
@@ -110,6 +115,8 @@ val pluginInstallMethods by tweak {
             pluginRegistry.installedDependencies(),
         )
 
+        for (action in plan.actions) requireReplaceable(action.id)
+
         mapOf(
             "actions" to plan.actions.map { action ->
                 mapOf(
@@ -144,6 +151,8 @@ val pluginInstallMethods by tweak {
 
         RepoStore.ensureLoaded(appInfo.dataDir)
         SourcesStore.ensureLoaded(appInfo.dataDir)
+
+        for (action in actions) requireReplaceable(action.id)
 
         repoInstallMutex.withLock {
             // An overlapping plan may have already satisfied some of these actions.
@@ -259,6 +268,16 @@ val pluginInstallMethods by tweak {
             }
         }
     }
+}
+
+/** Rejects replacing an internal plugin without provenance. Stubs have one, so they can update. */
+private fun requireReplaceable(id: String) {
+    val factory = pluginRegistry.factories[id] ?: return
+    if (InternalPluginFlags.INTERNAL in factory.internalFlags && SourcesStore[id] == null)
+        throw PluginSystemError(
+            PluginErrorCodes.NOT_ALLOWED,
+            "Plugin $id is built into Revenge and can't be replaced",
+        )
 }
 
 context(host: HostScope)

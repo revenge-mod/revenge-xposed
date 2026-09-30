@@ -65,6 +65,12 @@ internal fun discoverExternalPlugins(
 
         try {
             val plugin = parseExternalPluginDir(dir)
+            // Internal plugins win over installed copies without provenance.
+            // Stubs are handled outside the Discovery flow.
+            if (plugin.manifest.id in internalManifests) {
+                pluginLog.w("Ignoring installed copy of internal plugin '${plugin.manifest.id}' in '${dir.name}'")
+                continue
+            }
             parsed[plugin.manifest.id] = plugin
         } catch (e: Throwable) {
             failures[dir.name] = DiscoveryFailure(

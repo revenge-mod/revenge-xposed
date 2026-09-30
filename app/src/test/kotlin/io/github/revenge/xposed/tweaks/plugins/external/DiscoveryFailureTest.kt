@@ -65,6 +65,26 @@ class DiscoveryFailureTest {
         PluginDependencyGraph(knownManifests + factories.associate { it.manifest.id to it.manifest })
             .satisfiedDependencies(id)
 
+    // Stub plugins are handled outside the Discovery flow and tested in StubPluginTest.
+    @Test
+    fun `installed copy of an internal plugin is ignored and does not replace its manifest`() {
+        val internalId = "com.example.internal"
+        val internals = knownManifests +
+                (internalId to PluginManifest(internalId, internalId, "", "", version = Version.parse("1.0.0")))
+        writePlugin(internalId, version = "2.0.0")
+        writePlugin("com.example.dependent", dependencies = "\"$internalId\": { \"version\": \">=2\" }")
+
+        val discovery = discoverExternalPlugins(dataDir.absolutePath, internals)
+
+        assertTrue(discovery.factories.none { it.manifest.id == internalId })
+        assertTrue(internalId !in discovery.failures)
+        // The dependent resolves against the internal 1.0.0, not the ignored 2.0.0 copy.
+        assertEquals(
+            PluginErrorCodes.DEPENDENCY_UNSATISFIED,
+            discovery.failures["com.example.dependent"]?.errors?.single()?.code,
+        )
+    }
+
     @Test
     fun `valid plugin loads with no failures`() {
         writePlugin("com.example.ok")

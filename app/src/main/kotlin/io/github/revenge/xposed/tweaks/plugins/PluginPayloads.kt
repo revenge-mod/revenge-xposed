@@ -5,6 +5,7 @@ import io.github.revenge.plugins.PluginScope
 import io.github.revenge.xposed.tweaks.plugins.external.DiscoveryFailure
 import io.github.revenge.xposed.tweaks.plugins.external.MANIFEST_FORMAT
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
+import io.github.revenge.xposed.tweaks.plugins.internal.internalPluginOf
 import io.github.revenge.xposed.tweaks.plugins.repos.PluginSource
 import java.io.File
 
@@ -21,6 +22,7 @@ internal fun PluginFactory.toJSPayload(
     "enabledByDefault" to (InternalPluginFlags.ENABLED_BY_DEFAULT in internalFlags),
     "api" to (InternalPluginFlags.API in internalFlags),
     "source" to source?.toJSPayload(),
+    "hasStub" to hasStub(manifest.id, source),
     "unsatisfiedOptionalDependencies" to pluginRegistry.dependencies.unsatisfiedOptionalDependencies(manifest.id).toList(),
     // Errors the native side has already hit (e.g. at boot, before JS was up).
     "errors" to buildList {
@@ -48,9 +50,13 @@ internal fun DiscoveryFailure.toJSPayload(
     "api" to false,
     "failed" to true,
     "source" to source?.toJSPayload(),
+    "hasStub" to hasStub(manifest.id, source),
     "unsatisfiedOptionalDependencies" to emptyList<String>(),
     "errors" to errors.map { it.toJSPayload() },
 )
+
+/** Whether uninstalling [id] restores an internal plugin with the same ID. */
+private fun hasStub(id: String, source: PluginSource?) = source != null && internalPluginOf(id) != null
 
 internal fun PluginSource.toJSPayload(): Map<String, Any?> = mapOf(
     "repo" to repo,
