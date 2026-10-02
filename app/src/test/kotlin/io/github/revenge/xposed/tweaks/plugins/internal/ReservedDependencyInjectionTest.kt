@@ -58,8 +58,8 @@ class ReservedDependencyInjectionTest {
         assertEquals(API_DEPENDENCY_ID, apiProviderPlugin.manifest.id)
         assertEquals(DISCORD_DEPENDENCY_ID, discordProviderPlugin.manifest.id)
         for (provider in listOf(apiProviderPlugin, discordProviderPlugin)) {
-            assertTrue(io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags.INTERNAL in provider.internalFlags)
-            assertTrue(io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags.ESSENTIAL in provider.internalFlags)
+            assertTrue(InternalPluginFlags.INTERNAL in provider.internalFlags)
+            assertTrue(InternalPluginFlags.ESSENTIAL in provider.internalFlags)
         }
     }
 }

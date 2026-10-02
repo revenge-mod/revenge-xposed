@@ -5,7 +5,6 @@ import io.github.revenge.plugins.API_VERSION
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.xposed.hook
 import io.github.revenge.xposed.method
-import io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags
 
 private val manifest = PluginManifest(
     id = "revenge.discord.prevent-ota-updates",
@@ -17,7 +16,7 @@ private val manifest = PluginManifest(
 )
 
 internal val preventOtaUpdatesPlugin =
-    internalPlugin(manifest, setOf(InternalPluginFlags.INTERNAL)) {
+    internalPlugin(manifest) {
         start {
             if (startedLate) {
                 withAppActivity {

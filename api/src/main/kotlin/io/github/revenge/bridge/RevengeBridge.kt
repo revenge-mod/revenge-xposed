@@ -10,6 +10,11 @@ package io.github.revenge.bridge
  */
 interface RevengeBridge {
     /**
+     * Whether [callJSMethod] can reach JS at this point.
+     */
+    val isReady: Boolean
+
+    /**
      * Register a native method callable from JS.
      *
      * If [name] is already registered, the new handler replaces the old one and a warning is logged.
@@ -34,7 +39,7 @@ interface RevengeBridge {
     /**
      * Invoke a JS method on the `RevengeBridge` callable module and await JS's `revenge.__callableReturn` reply.
      *
-     * Throws if JS responds with `{ error: ... }` or if JavaScript isn't ready. May suspend forever if JS never replies.
+     * Throws if JS responds with an error or if JavaScript isn't ready (check [isReady]). May suspend forever if JS never replies.
      */
     suspend fun callJSMethod(name: String, args: List<Any?> = emptyList()): Any?
 }

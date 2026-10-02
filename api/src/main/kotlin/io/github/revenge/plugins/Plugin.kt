@@ -21,7 +21,10 @@ data class PluginManifest(
     val id: String,
     val name: String,
     val description: String,
+    /** Author, as `Name <DISCORD_ID> (LINK)`. Discord IDs and links are optional and repeatable, with IDs first. */
     val author: String,
+    /** Contributors, in the same format as [author]. */
+    val contributors: List<String> = emptyList(),
     val icon: String? = null,
     /** Dependencies keyed by plugin ID. */
     val dependencies: Map<String, PluginDependency> = emptyMap(),
