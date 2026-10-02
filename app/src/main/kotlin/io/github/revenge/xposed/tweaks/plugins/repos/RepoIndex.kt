@@ -30,6 +30,7 @@ internal data class RepoPlugin(
     val name: String,
     val description: String = "",
     val author: String = "",
+    val contributors: List<String> = emptyList(),
     /** A Discord asset name or a `data:` URL. */
     val icon: String? = null,
     /**

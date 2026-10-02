@@ -20,6 +20,7 @@ internal data class ExternalManifest(
     val name: String,
     val description: String = "",
     val author: String = "",
+    val contributors: List<String> = emptyList(),
     /* See [validatedPluginIcon]. */
     val icon: String? = null,
     /** The plugin's version. */
@@ -33,6 +34,7 @@ internal data class ExternalManifest(
         name = name,
         description = description,
         author = author,
+        contributors = contributors,
         icon = icon?.let(::validatedPluginIcon),
         dependencies = dependencies.entries.associate { (depId, dep) ->
             requireValidPluginId(depId)

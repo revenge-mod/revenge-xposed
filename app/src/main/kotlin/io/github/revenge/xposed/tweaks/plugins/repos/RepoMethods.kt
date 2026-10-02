@@ -137,6 +137,7 @@ val pluginRepos by tweak {
                 "name" to plugin.name,
                 "description" to plugin.description,
                 "author" to plugin.author,
+                "contributors" to plugin.contributors,
                 "icon" to plugin.icon,
                 "channels" to plugin.channels,
                 "versions" to plugin.versions.mapValues { (_, v) ->
@@ -179,6 +180,7 @@ internal fun internalRepoPluginsJSPayload(): List<Map<String, Any?>> {
             "name" to manifest.name,
             "description" to manifest.description,
             "author" to manifest.author,
+            "contributors" to manifest.contributors,
             "icon" to manifest.icon,
             "channels" to mapOf(REPO_CHANNEL_LATEST to version),
             "versions" to mapOf(

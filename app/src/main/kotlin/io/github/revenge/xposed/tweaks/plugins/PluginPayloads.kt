@@ -81,6 +81,7 @@ internal fun PluginManifest.toMap(): Map<String, Any?> = mapOf(
     "name" to name,
     "description" to description,
     "author" to author,
+    "contributors" to contributors,
     "icon" to icon,
     "dependencies" to dependencies.mapValues { (_, dep) ->
         mapOf("version" to dep.version.toString(), "optional" to dep.optional)
