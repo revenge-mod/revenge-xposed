@@ -130,6 +130,7 @@ val pluginInstallMethods by tweak {
                     "channel" to if (action.id == id) channel
                     else sources[action.id]?.channel ?: REPO_CHANNEL_LATEST,
                     "replaces" to action.replaces?.toString(),
+                    "dependents" to action.dependents.map { (id, optional) -> mapOf("id" to id, "optional" to optional) },
                 )
             },
             "warnings" to plan.warnings,
