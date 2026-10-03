@@ -256,8 +256,9 @@ val pluginInstallMethods by tweak {
 
                 // Compare against a pending on-disk update if there is one, so it isn't re-offered.
                 val current = pluginRegistry.pendingUpdates[id] ?: installedVersion
-                // If newer version is available, or installed hash is set but isn't the same as remote hash.
-                if (available > current || source.hash?.let { plugin.versions[target]?.sha256 != it } == true) add(
+                val republished = available.compareTo(current) == 0 &&
+                        source.hash != null && plugin.versions[target]?.sha256 != source.hash
+                if (available > current || republished) add(
                     mapOf(
                         "id" to id,
                         "installed" to current.toString(),
