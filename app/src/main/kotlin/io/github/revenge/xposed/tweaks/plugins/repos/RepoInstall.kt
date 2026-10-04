@@ -45,6 +45,8 @@ internal class RepoInstallAction(
     val repo: String,
     /** Channel followed for future update checks. */
     val channel: String,
+    /** `true` holds updates, `false` resumes them, `null` keeps the current value. */
+    val hold: Boolean?,
 )
 
 internal class DownloadProgress(
@@ -72,6 +74,7 @@ internal fun parseRepoInstallAction(raw: Any?): RepoInstallAction {
             ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Plan action is missing 'size'"),
         repo = string("repo"),
         channel = (map["channel"] as? String) ?: REPO_CHANNEL_LATEST,
+        hold = map["hold"] as? Boolean,
     )
 }
 
@@ -138,7 +141,7 @@ internal suspend fun executeInstallPlan(
         for ((action, plugin) in orderStagedByDependencies(staged)) {
             val dir = applyStagedPlugin(plugin, root)
             runCatching {
-                SourcesStore.record(action.id, repo = action.repo, channel = action.channel)
+                SourcesStore.record(action.id, action.repo, action.channel, action.sha256, action.hold)
             }.onFailure { pluginLog.e("Failed to record plugin source for ${action.id}", it) }
 
             val deferred = isUpdate(action.id) || plugin.manifest.dependencies.any { (depId, dep) ->

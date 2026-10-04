@@ -68,11 +68,18 @@ internal object SourcesStore {
         persist(updated)
     }
 
-    /** Records where [pluginId] was just installed from, keeping every other configuration intact. */
+    /**
+     * Records where [pluginId] was just installed from, keeping every other configuration intact.
+     *
+     * [held] = `null` keeps the current value.
+     */
     @Synchronized
-    fun record(pluginId: String, repo: String?, channel: String) {
-        val existing = all()[pluginId]
-        set(pluginId, existing?.copy(repo = repo, channel = channel) ?: PluginSource(repo, channel))
+    fun record(pluginId: String, repo: String?, channel: String, hash: String?, held: Boolean? = null) {
+        val existing = all()[pluginId] ?: PluginSource()
+        set(
+            pluginId,
+            existing.copy(repo = repo, channel = channel, hash = hash, held = held ?: existing.held),
+        )
     }
 
     /** Holds [pluginId] at its installed version, or resumes following its channel. Returns the new record. */

@@ -81,21 +81,36 @@ val pluginInstallMethods by tweak {
     }
 
     /**
-     * `revenge.plugins.planInstall(id, version?, channel?, filteredRepos?) -> InstallPlan`
+     * `revenge.plugins.planInstall(id, options?) -> InstallPlan`
      *
      * Resolves an install against cached indexes and returns a plan for JS to confirm and pass to `install`.
+     *
+     * `options = { repos?: string[], targets?: { [id]: { repo?, version?, channel? } } }`:
+     * - `repos` only considers those repositories, for every plugin.
+     * - `targets` overrides default resolution rules.
      */
     pluginSystemAsyncMethod("revenge.plugins.planInstall") { args ->
         val id = args.getOrNull(0) as? String
             ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a plugin ID")
-        val version = args.getOrNull(1) as? String
-        val channel = args.getOrNull(2) as? String ?: REPO_CHANNEL_LATEST
+        val options = args.getOrNull(1)?.let {
+            it as? Map<*, *> ?: throw PluginSystemError(
+                PluginErrorCodes.INVALID_ARGUMENT,
+                "Expected plan options or null"
+            )
+        }
 
-        @Suppress("UNCHECKED_CAST")
-        val filteredRepos = try {
-            args.getOrNull(3) as ArrayList<String>?
-        } catch (_: Throwable) {
-            throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a list of repository URLs or null")
+        val targets = (options?.get("targets") as? Map<*, *>).orEmpty().entries.associate { (key, value) ->
+            val target = value as? Map<*, *>
+                ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a target object for '$key'")
+            key as String to PlanTarget(
+                repo = target["repo"] as? String,
+                version = target["version"] as? String,
+                channel = target["channel"] as? String,
+            )
+        }
+        val filteredRepos = (options?.get("repos") as? List<*>)?.map {
+            it as? String
+                ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a list of repository URLs")
         }
 
         RepoStore.ensureLoaded(appInfo.dataDir)
@@ -105,13 +120,12 @@ val pluginInstallMethods by tweak {
             RepoStore.list().filter { it.enabled && (filteredRepos?.contains(it.url) ?: true) }.mapNotNull { repo ->
                 RepoStore.cachedIndex(repo.url)?.let { repo.url to it }
             }
-        val sources = SourcesStore.all()
 
         val plan = resolveInstall(
-            ResolveRequest(id, version, channel),
+            ResolveRequest(id, targets),
             repos,
             pluginRegistry.installedVersions(),
-            sources,
+            SourcesStore.all(),
             pluginRegistry.installedDependencies(),
         )
 
@@ -126,11 +140,13 @@ val pluginInstallMethods by tweak {
                     "sha256" to action.sha256,
                     "size" to action.size,
                     "repo" to action.repo,
-                    // The root uses the requested channel, dependencies keep their pinned one.
-                    "channel" to if (action.id == id) channel
-                    else sources[action.id]?.channel ?: REPO_CHANNEL_LATEST,
+                    "channel" to action.channel,
+                    "hold" to action.hold,
                     "replaces" to action.replaces?.toString(),
-                    "dependents" to action.dependents.map { (id, optional) -> mapOf("id" to id, "optional" to optional) },
+                    "dependents" to action.dependents.map { (dependent, how) ->
+                        mapOf("id" to dependent, "optional" to how.optional, "range" to how.range.toString())
+                    },
+                    "allowed" to action.allowed,
                 )
             },
             "warnings" to plan.warnings,
@@ -142,6 +158,7 @@ val pluginInstallMethods by tweak {
      *
      * Download, verify, and apply on disk. New plugins load immediately. Updates run after a reload.
      * A manifest not matching the plan aborts the whole plan without committing.
+     * Actions with exact artifact (version + hash) already on disk are skipped, only recording their source and hold status.
      *
      * Concurrent calls get queued and run one by one, re-checking after each.
      */
@@ -156,12 +173,26 @@ val pluginInstallMethods by tweak {
         for (action in actions) requireReplaceable(action.id)
 
         repoInstallMutex.withLock {
-            // An overlapping plan may have already satisfied some of these actions.
-            val todo = actions.filter { action ->
-                pluginRegistry.factories[action.id]?.manifest?.version != action.version &&
-                        pluginRegistry.pendingUpdates[action.id] != action.version
+            val todo = mutableListOf<RepoInstallAction>()
+            val skipped = mutableListOf<String>()
+            for (action in actions) {
+                val source = SourcesStore[action.id]
+                val onDisk = pluginRegistry.pendingUpdates[action.id]
+                    ?: pluginRegistry.factories[action.id]?.manifest?.version
+
+                if (onDisk != action.version || source?.hash != action.sha256) {
+                    todo += action
+                    continue
+                }
+
+                // The exact artifact is on disk already (an overlapping plan installed it), so change the source only.
+                val moved = source.repo != action.repo || source.channel != action.channel ||
+                        (action.hold != null && source.held != action.hold)
+                if (moved) runCatching {
+                    SourcesStore.record(action.id, action.repo, action.channel, action.sha256, action.hold)
+                }.onFailure { pluginLog.e("Failed to record plugin source for ${action.id}", it) }
+                skipped += action.id
             }
-            val skipped = actions.map { it.id } - todo.map { it.id }.toSet()
 
             val result = executeInstallPlan(
                 todo,
