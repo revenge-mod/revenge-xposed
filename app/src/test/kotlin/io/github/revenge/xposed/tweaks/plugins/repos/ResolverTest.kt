@@ -152,18 +152,18 @@ class ResolverTest {
     }
 
     @Test
-    fun `allowed lists versions satisfying planned dependents per repository`() {
+    fun `candidates list versions satisfying planned dependents per repository`() {
         val plan = resolveInstall(ResolveRequest("com.example.a"), targetRepos(), API, emptyMap())
         val opt = plan.actions.single { it.id == "com.example.opt" }
 
-        assertEquals(setOf("1.0.0", "1.2.0"), opt.allowed.getValue(REPO_A).keys)
-        assertEquals(setOf("1.1.0"), opt.allowed.getValue(REPO_B).keys)
-        // The root has no planned dependents, every version is allowed
-        assertEquals(setOf("1.0.0"), plan.actions.single { it.id == "com.example.a" }.allowed.getValue(REPO_A).keys)
+        assertEquals(setOf("1.0.0", "1.2.0"), opt.candidates.getValue(REPO_A).keys)
+        assertEquals(setOf("1.1.0"), opt.candidates.getValue(REPO_B).keys)
+        // The root has no planned dependents, every version is a candidate
+        assertEquals(setOf("1.0.0"), plan.actions.single { it.id == "com.example.a" }.candidates.getValue(REPO_A).keys)
     }
 
     @Test
-    fun `allowed marks installed plugins outside the plan a version would break`() {
+    fun `candidates mark installed plugins outside the plan a version would break`() {
         val plan = resolveInstall(
             ResolveRequest("com.example.req"),
             targetRepos(),
@@ -172,9 +172,9 @@ class ResolverTest {
             installedDependencies = mapOf("com.example.user" to mapOf("com.example.req" to VersionRange.parse(">=1.0 <2"))),
         )
 
-        val allowed = plan.actions.single().allowed.getValue(REPO_A)
-        assertEquals(emptyList(), allowed.getValue("1.0.0"))
-        assertEquals(listOf("com.example.user"), allowed.getValue("2.0.0"))
+        val candidates = plan.actions.single().candidates.getValue(REPO_A)
+        assertEquals(emptyList(), candidates.getValue("1.0.0").breaks)
+        assertEquals(listOf("com.example.user"), candidates.getValue("2.0.0").breaks)
     }
 
     @Test

@@ -30,8 +30,14 @@ internal data class PlannedAction(
     val replaces: Version?,
     /** Dependents that pulled this plugin in. Empty for the root. */
     val dependents: Map<String, PlanDependent> = emptyMap(),
-    /** Map<Repo, Map<Version, List<IncompatiblePluginId>>> */
-    val allowed: Map<String, Map<String, List<String>>> = emptyMap(),
+    /** Versions satisfying planned dependents keyed by repository with metadata. */
+    val candidates: Map<String, Map<String, VersionCandidate>> = emptyMap(),
+)
+
+/** A version a planned plugin could switch to. */
+internal data class VersionCandidate(
+    /** Installed plugins outside the plan this version breaks. */
+    val breaks: List<String>,
 )
 
 /** How a planned dependent depends on an action. */
@@ -274,16 +280,21 @@ internal fun resolveInstall(
     return InstallPlan(
         actions.values.map { action ->
             val dependents = edges[action.id].orEmpty()
-            val allowed = repos.mapNotNull { (repoUrl, index) ->
+            val candidates = repos.mapNotNull { (repoUrl, index) ->
                 val plugin = index.plugins[action.id] ?: return@mapNotNull null
                 repoUrl to plugin.versions.keys.mapNotNull { key ->
                     val version = runCatching { Version.parse(key) }.getOrNull() ?: return@mapNotNull null
-                    if (dependents.values.all { it.range.satisfies(version) }) key to breaks(action.id, version)
+                    if (dependents.values.all { it.range.satisfies(version) }) key to VersionCandidate(
+                        breaks(
+                            action.id,
+                            version
+                        )
+                    )
                     else null
                 }.toMap()
             }.toMap()
 
-            action.copy(dependents = dependents, allowed = allowed)
+            action.copy(dependents = dependents, candidates = candidates)
         },
         warnings,
     )

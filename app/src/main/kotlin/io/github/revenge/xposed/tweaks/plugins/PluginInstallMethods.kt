@@ -146,7 +146,9 @@ val pluginInstallMethods by tweak {
                     "dependents" to action.dependents.map { (dependent, how) ->
                         mapOf("id" to dependent, "optional" to how.optional, "range" to how.range.toString())
                     },
-                    "allowed" to action.allowed,
+                    "candidates" to action.candidates.mapValues { (_, versions) ->
+                        versions.mapValues { (_, candidate) -> mapOf("breaks" to candidate.breaks) }
+                    },
                 )
             },
             "warnings" to plan.warnings,
