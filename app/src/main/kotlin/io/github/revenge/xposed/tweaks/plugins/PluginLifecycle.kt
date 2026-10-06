@@ -184,9 +184,11 @@ internal fun stopNativePlugin(pluginId: String) {
         entry.scope.errors.tryEmit(e)
         pluginLog.e("Plugin $pluginId threw in stop()", e)
     } finally {
+        // Clear unrelated flags
+        val latestFlags = entry.scope.flags.value.filter { it.persistAfterDisable || it.bit != 0 }.toSet()
         // stop() may have changed flags (requireReload), we need to sync before stopping the jobs.
         // If we accidentally dispatch twice, the second call will be a no-op anyways.
-        dispatchSlotFlags(PluginStatesStore.boot, pluginId, entry.scope.flags.value)
+        dispatchSlotFlags(PluginStatesStore.boot, pluginId, latestFlags)
 
         entry.persistJob.cancel()
         entry.errorSyncJob.cancel()

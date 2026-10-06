@@ -505,14 +505,18 @@ object PluginStatesStore {
 }
 
 
-/** Writes a plugin's flags into [slot] and notifies JS with [sendStateToJS] if something changed. */
+/** Writes a plugin's flags into [slot] and notifies JS with [sendStateToJS]. */
 context(host: HostScope)
 internal suspend fun writeSlotFlags(slot: PluginStateSlot, pluginId: String, flags: Set<PluginFlags>) {
-    if (slot.write(pluginId, flags)) sendStateToJS(slot.id, pluginId, flags)
+    slot.write(pluginId, flags)
+    // Some non-persisted flags can change, so send anyway.
+    sendStateToJS(slot.id, pluginId, flags)
 }
 
-/** Writes a plugin's flags into [slot] and notifies JS with [dispatchStateToJS] if something changed. */
+/** Writes a plugin's flags into [slot] and notifies JS with [dispatchStateToJS]. */
 context(host: HostScope)
 internal fun dispatchSlotFlags(slot: PluginStateSlot, pluginId: String, flags: Set<PluginFlags>) {
-    if (slot.write(pluginId, flags)) dispatchStateToJS(slot.id, pluginId, flags)
+    slot.write(pluginId, flags)
+    // Some non-persisted flags can change, so dispatch anyway.
+    dispatchStateToJS(slot.id, pluginId, flags)
 }
