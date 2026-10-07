@@ -18,6 +18,7 @@ import kotlin.time.Duration.Companion.seconds
 data class CustomLoadUrl(
     val enabled: Boolean = false,
     val url: String = "",
+    val manifestUrl: String = "",
 )
 
 @Serializable
@@ -45,6 +46,7 @@ object RevengeUpdater {
     @Volatile
     private var config = LoaderConfig()
     private lateinit var bundle: File
+    private lateinit var manifest: File
     private lateinit var etag: File
     private lateinit var configFile: File
 
@@ -61,6 +63,7 @@ object RevengeUpdater {
         val filesDir = File(dataDir, RevengeConstants.FILES_DIR).apply { mkdirs() }
 
         bundle = File(cacheDir, RevengeConstants.MAIN_SCRIPT_FILE)
+        manifest = File(cacheDir, RevengeConstants.BUNDLE_MANIFEST_FILE)
         etag = File(cacheDir, ETAG_PATH)
         configFile = File(filesDir, CONFIG_PATH)
 
@@ -93,10 +96,12 @@ object RevengeUpdater {
             when (result) {
                 is ETagFetchResult.Fetched -> {
                     AtomicFile(bundle).writeBytes(result.bytes)
-
                     result.etag?.let(etag::writeText) ?: etag.delete()
 
                     log.i("Bundle updated (${result.bytes.size} bytes)")
+
+                    downloadManifest()
+
                     if (showDialog) {
                         if (userInitiated) showSuccessDialog() else showUpdateDialog()
                     }
@@ -110,6 +115,26 @@ object RevengeUpdater {
         } finally {
             _downloadReady.complete(Unit)
         }
+    }
+
+    private suspend fun downloadManifest() {
+        val manifestUrl = config.customLoadUrl.takeIf { it.enabled }?.manifestUrl
+            ?: return
+
+        try {
+            val result = httpClient.getWithETag(url = manifestUrl, etag = null, timeoutMillis = null)
+            if (result is ETagFetchResult.Fetched) {
+                AtomicFile(manifest).writeBytes(result.bytes)
+                log.i("Bundle manifest updated (${result.bytes.size} bytes)")
+            }
+        } catch (e: Throwable) {
+            log.w("Failed to download bundle manifest", e)
+        }
+    }
+
+    fun readBundleManifest(): String? {
+        if (manifest.exists()) return manifest.readText()
+        return null
     }
 
     private fun showUpdateDialog() = withAppActivity { activity ->
@@ -163,8 +188,9 @@ object RevengeUpdater {
  * is available, then kicks off the first download.
  */
 val revengeUpdater by tweak {
+    RevengeUpdater.init(appInfo.dataDir)
+
     withAppContext { ctx ->
-        RevengeUpdater.init(ctx.dataDir.absolutePath)
         RevengeUpdater.downloadScript(userInitiated = false, showDialog = false)
     }
 }

@@ -1,7 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins.internal
 
 import io.github.revenge.plugins.*
-import io.github.revenge.xposed.tweaks.plugins.InternalPluginFlags
 
 /**
  * Reserved dependency IDs that are provided by internal provider plugins.
