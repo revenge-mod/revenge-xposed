@@ -127,7 +127,7 @@ class ResolverTest {
         )
 
         assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
-        assertTrue(plan.warnings.any { "com.example.opt" in it && "skipped" in it })
+        assertTrue(plan.warnings.any { "com.example.opt" in it.message && "skipped" in it.message })
     }
 
     @Test
@@ -196,6 +196,30 @@ class ResolverTest {
     }
 
     @Test
+    fun `skipping missing optionals leaves them out unless targeted`() {
+        val skipped = resolveInstall(
+            ResolveRequest("com.example.a", skipMissingOptionals = true),
+            targetRepos(),
+            API,
+            emptyMap(),
+        )
+        assertEquals(listOf("com.example.a"), skipped.actions.map { it.id })
+        assertTrue(skipped.warnings.isEmpty())
+
+        val targeted = resolveInstall(
+            ResolveRequest(
+                "com.example.a",
+                mapOf("com.example.opt" to PlanTarget(version = "1.0.0")),
+                skipMissingOptionals = true,
+            ),
+            targetRepos(),
+            API,
+            emptyMap(),
+        )
+        assertEquals(setOf("com.example.a", "com.example.opt"), targeted.actions.map { it.id }.toSet())
+    }
+
+    @Test
     fun `targets for plugins outside the plan are ignored`() {
         val plan = resolveInstall(
             ResolveRequest("com.example.req", mapOf("com.example.nope" to PlanTarget(version = "1.0.0"))),
@@ -205,7 +229,7 @@ class ResolverTest {
         )
 
         assertEquals(listOf("com.example.req"), plan.actions.map { it.id })
-        assertTrue(plan.warnings.none { "com.example.nope" in it })
+        assertTrue(plan.warnings.none { "com.example.nope" in it.message })
     }
 
     @Test
@@ -315,7 +339,7 @@ class ResolverTest {
 
         val plan = resolveInstall(ResolveRequest("com.example.a"), repos, API, emptyMap())
         assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
-        assertTrue(plan.warnings.any { "com.example.missing" in it })
+        assertTrue(plan.warnings.any { "com.example.missing" in it.message })
     }
 
     @Test
@@ -431,7 +455,7 @@ class ResolverTest {
         )
 
         assertEquals(Version.parse("1.0.0"), plan.actions.single().version)
-        assertTrue(plan.warnings.any { "Downgrading" in it })
+        assertTrue(plan.warnings.any { "Downgrading" in it.message })
     }
 
     @Test
@@ -499,7 +523,7 @@ class ResolverTest {
         )
 
         assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
-        assertTrue(plan.warnings.any { "com.example.lib" in it })
+        assertTrue(plan.warnings.any { "com.example.lib" in it.message })
     }
 
     @Test
@@ -542,6 +566,93 @@ class ResolverTest {
         )
 
         assertEquals(Version.parse("2.0.0"), plan.actions.single().version)
-        assertTrue(plan.warnings.any { "com.example.consumer" in it })
+        assertTrue(plan.warnings.any { "com.example.consumer" in it.message })
+    }
+
+    @Test
+    fun `a dependent replaced by the plan never counts as broken`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.app" to plugin(
+                    channels = mapOf("latest" to "2.0.0"),
+                    versions = mapOf("2.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=2")))),
+                ),
+                "com.example.lib" to plugin(versions = mapOf("2.0.0" to version())),
+            ),
+        )
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.app"),
+            repos,
+            API + ("com.example.app" to Version.parse("1.0.0")) + ("com.example.lib" to Version.parse("1.0.0")),
+            mapOf(
+                "com.example.app" to PluginSource(repo = REPO_A),
+                "com.example.lib" to PluginSource(repo = REPO_A),
+            ),
+            installedDependencies = mapOf(
+                "com.example.app" to mapOf("com.example.lib" to VersionRange.parse("<2")),
+                "com.example.other" to mapOf("com.example.lib" to VersionRange.parse("<2")),
+            ),
+        )
+
+        assertEquals(listOf("com.example.app", "com.example.lib"), plan.actions.map { it.id })
+        val breaks = plan.warnings.single() as ResolveIssue.Breaks
+        assertEquals("com.example.lib", breaks.id)
+        assertEquals("com.example.other", breaks.dependent)
+    }
+
+    @Test
+    fun `a dependency planned later outside an earlier dependent's range conflicts`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(
+                    versions = mapOf(
+                        "1.0.0" to version(
+                            deps = arrayOf("com.example.b" to dep(">=1"), "com.example.c" to dep(">=2")),
+                        ),
+                    ),
+                ),
+                // Satisfied by the installed c@1 when planned, before a plans c@2
+                "com.example.b" to plugin(versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.c" to dep("<2"))))),
+                "com.example.c" to plugin(versions = mapOf("1.0.0" to version(), "2.0.0" to version())),
+            ),
+        )
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a"),
+            repos,
+            API + ("com.example.c" to Version.parse("1.0.0")),
+            mapOf("com.example.c" to PluginSource(repo = REPO_A)),
+        )
+
+        val conflict = plan.warnings.filterIsInstance<ResolveIssue.Conflict>().single()
+        assertEquals("com.example.c", conflict.id)
+        assertEquals("com.example.b", conflict.dependent)
+    }
+
+    @Test
+    fun `a held required dependency fails with a structured issue`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.a" to plugin(
+                    versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=2")))),
+                ),
+                "com.example.lib" to plugin(versions = mapOf("2.0.0" to version())),
+            ),
+        )
+
+        val error = assertFailsWith<PluginSystemResolveException> {
+            resolveInstall(
+                ResolveRequest("com.example.a"),
+                repos,
+                API + ("com.example.lib" to Version.parse("1.0.0")),
+                mapOf("com.example.lib" to PluginSource(repo = REPO_A, held = true)),
+            )
+        }
+
+        val issue = error.issue as ResolveIssue.Unresolved
+        assertEquals(UnresolvedReason.HELD, issue.reason)
+        assertEquals(Version.parse("1.0.0"), issue.installed)
+        assertEquals("held", error.details?.get("reason"))
     }
 }

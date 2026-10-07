@@ -1,6 +1,5 @@
 package io.github.revenge.xposed.tweaks.plugins
 
-import io.github.revenge.plugins.Version
 import io.github.revenge.xposed.api.HostScope
 import io.github.revenge.xposed.api.callJSMethod
 import io.github.revenge.xposed.tweak
@@ -85,9 +84,10 @@ val pluginInstallMethods by tweak {
      *
      * Resolves an install against cached indexes and returns a plan for JS to confirm and pass to `install`.
      *
-     * `options = { repos?: string[], targets?: { [id]: { repo?, version?, channel? } } }`:
+     * `options = { repos?: string[], targets?: { [id]: { repo?, version?, channel? } }, skipMissingOptionals?: boolean }`:
      * - `repos` only considers those repositories, for every plugin.
      * - `targets` overrides default resolution rules.
+     * - `skipMissingOptionals` skips untargeted optional dependencies that aren't installed.
      */
     pluginSystemAsyncMethod("revenge.plugins.planInstall") { args ->
         val id = args.getOrNull(0) as? String
@@ -122,7 +122,7 @@ val pluginInstallMethods by tweak {
             }
 
         val plan = resolveInstall(
-            ResolveRequest(id, targets),
+            ResolveRequest(id, targets, skipMissingOptionals = options?.get("skipMissingOptionals") == true),
             repos,
             pluginRegistry.installedVersions(),
             SourcesStore.all(),
@@ -151,7 +151,7 @@ val pluginInstallMethods by tweak {
                     },
                 )
             },
-            "warnings" to plan.warnings,
+            "warnings" to plan.warnings.map { it.toJSPayload() },
         )
     }
 
@@ -260,47 +260,44 @@ val pluginInstallMethods by tweak {
     }
 
     /**
-     * `revenge.plugins.repos.listUpdates(url) -> Update[]`
+     * `revenge.plugins.listUpdates() -> Update[]`
      *
-     * Checks a repo's cached index against the plugins pinned to it.
-     * An update exists when the pinned channel points to something newer. Held plugins are skipped.
+     * Checks cached indexes of enabled repositories against installed plugins. See [findUpdates].
+     * Each update comes with structured `warnings`, and a `blocker` when it can't be installed safely.
      */
-    pluginSystemAsyncMethod("revenge.plugins.repos.listUpdates") { args ->
-        val url = args.firstOrNull() as? String
-            ?: throw PluginSystemError(PluginErrorCodes.INVALID_ARGUMENT, "Expected a repository URL")
-
+    pluginSystemAsyncMethod("revenge.plugins.listUpdates") { _ ->
         RepoStore.ensureLoaded(appInfo.dataDir)
         SourcesStore.ensureLoaded(appInfo.dataDir)
 
-        // Internal plugins update with the loader itself, never through repos.
-        if (url == INTERNAL_REPO_URL) return@pluginSystemAsyncMethod emptyList<Any?>()
+        val repos = RepoStore.list().filter { it.enabled }.mapNotNull { repo ->
+            RepoStore.cachedIndex(repo.url)?.let { repo.url to it }
+        }
 
-        if (RepoStore.list().none { it.url == url })
-            throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "Unknown repository: '$url'")
-        val index = RepoStore.cachedIndex(url)
-            ?: throw PluginSystemError(PluginErrorCodes.NOT_FOUND, "No cached index for '$url'; refresh it first")
-
-        buildList {
-            for ((id, source) in SourcesStore.all()) {
-                if (source.repo != url || source.held) continue
-                val installedVersion = pluginRegistry.factories[id]?.manifest?.version ?: continue
-                val plugin = index.plugins[id] ?: continue
-                val target = plugin.channels[source.channel] ?: continue
-                val available = runCatching { Version.parse(target) }.getOrNull() ?: continue
-
-                // Compare against a pending on-disk update if there is one, so it isn't re-offered.
-                val current = pluginRegistry.pendingUpdates[id] ?: installedVersion
-                val republished = available.compareTo(current) == 0 &&
-                        source.hash != null && plugin.versions[target]?.sha256 != source.hash
-                if (available > current || republished) add(
+        findUpdates(
+            repos,
+            pluginRegistry.installedVersions(),
+            pluginRegistry.pendingUpdates,
+            SourcesStore.all(),
+            pluginRegistry.installedDependencies(),
+        ).map { update ->
+            mapOf(
+                "id" to update.id,
+                "installed" to update.installed.toString(),
+                "available" to update.available.toString(),
+                "channel" to update.channel,
+                "repo" to update.repo,
+                "size" to update.size,
+                "includes" to update.includes.map { action ->
                     mapOf(
-                        "id" to id,
-                        "installed" to current.toString(),
-                        "available" to available.toString(),
-                        "channel" to source.channel,
+                        "id" to action.id,
+                        "version" to action.version.toString(),
+                        "replaces" to action.replaces?.toString(),
+                        "size" to action.size,
                     )
-                )
-            }
+                },
+                "warnings" to update.warnings.map { it.toJSPayload() },
+                "blocker" to update.blocker?.toJSPayload(),
+            )
         }
     }
 }

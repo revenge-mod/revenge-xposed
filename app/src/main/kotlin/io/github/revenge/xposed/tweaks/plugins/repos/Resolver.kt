@@ -8,8 +8,147 @@ import io.github.revenge.xposed.tweaks.plugins.PluginSystemError
 internal data class InstallPlan(
     val actions: List<PlannedAction>,
     /** Non-blocking problems (skipped optionals, dependent-range conflicts). */
-    val warnings: List<String>,
+    val warnings: List<ResolveIssue>,
 )
+
+/** Why a dependency can't be resolved. */
+internal enum class UnresolvedReason(val js: String) {
+    /** No satisfying version in any allowed repository. */
+    UNAVAILABLE("unavailable"),
+
+    /** Held at an installed version outside the range. */
+    HELD("held"),
+
+    /** Targeted version or channel can't be met. */
+    TARGET("target"),
+}
+
+/** Resolution problem, as a plan warning or the cause of a [PluginSystemResolveException]. */
+internal sealed class ResolveIssue {
+    abstract val message: String
+
+    protected abstract fun fields(): Map<String, Any?>
+
+    fun toJSPayload(): Map<String, Any?> = fields() + ("message" to message)
+
+    /** Root already at the resolved [version]. Comes with an empty plan. */
+    data class UpToDate(val id: String, val version: Version) : ResolveIssue() {
+        override val message get() = "'$id' is already at $version"
+        override fun fields() = mapOf("type" to "upToDate", "id" to id, "version" to version.toString())
+    }
+
+    data class Downgrade(val id: String, val from: Version, val to: Version) : ResolveIssue() {
+        override val message get() = "Downgrading '$id' from $from to $to"
+        override fun fields() =
+            mapOf("type" to "downgrade", "id" to id, "from" to from.toString(), "to" to to.toString())
+    }
+
+    /**
+     * Planned [version] of [id] outside the [range] of installed [dependent], outside the plan.
+     * [fixedBy] names an update of [dependent] accepting [version], set by [findUpdates].
+     */
+    data class Breaks(
+        val id: String,
+        val version: Version,
+        val dependent: String,
+        val range: VersionRange,
+        val fixedBy: String? = null,
+    ) : ResolveIssue() {
+        override val message get() = "Installing $id@$version does not satisfy '$dependent' (requires $range)"
+        override fun fields() = mapOf(
+            "type" to "breaks",
+            "id" to id,
+            "version" to version.toString(),
+            "dependent" to dependent,
+            "range" to range.toString(),
+            "fixedBy" to fixedBy,
+        )
+    }
+
+    /** Planned [version] of [id] outside the [range] of planned [dependent]. */
+    data class Conflict(
+        val id: String,
+        val version: Version,
+        val dependent: String,
+        val dependentVersion: Version,
+        val range: VersionRange,
+    ) : ResolveIssue() {
+        override val message get() = "Planned $id@$version does not satisfy $dependent@$dependentVersion (requires $range)"
+        override fun fields() = mapOf(
+            "type" to "conflict",
+            "id" to id,
+            "version" to version.toString(),
+            "dependent" to dependent,
+            "dependentVersion" to dependentVersion.toString(),
+            "range" to range.toString(),
+        )
+    }
+
+    /**
+     * Dependency [id] of [dependent] with no usable version. Skipped when [optional], blocks otherwise.
+     * [installed] is the installed version, if any. [detail] explains a [UnresolvedReason.TARGET].
+     */
+    data class Unresolved(
+        val id: String,
+        val dependent: String,
+        val dependentVersion: Version,
+        val range: VersionRange,
+        val optional: Boolean,
+        val reason: UnresolvedReason,
+        val installed: Version? = null,
+        val detail: String? = null,
+    ) : ResolveIssue() {
+        override val message
+            get() = when {
+                reason == UnresolvedReason.TARGET && optional ->
+                    "$detail; skipped optional dependency of $dependent@$dependentVersion"
+
+                reason == UnresolvedReason.TARGET -> "$detail, required by $dependent@$dependentVersion"
+
+                reason == UnresolvedReason.HELD && optional ->
+                    "Optional dependency '$id' of $dependent@$dependentVersion is held at $installed (requires $range); skipped"
+
+                reason == UnresolvedReason.HELD ->
+                    "Dependency '$id' is held at $installed, which does not satisfy $dependent@$dependentVersion " +
+                            "(requires $range); unhold '$id' to let it update"
+
+                optional -> "Optional dependency '$id' of $dependent@$dependentVersion is unavailable (requires $range); skipped"
+
+                installed != null ->
+                    "Dependency '$id' of $dependent@$dependentVersion is installed at $installed but no version satisfying $range is available"
+
+                else ->
+                    "Required dependency '$id' of $dependent@$dependentVersion is not installed and not available from any repository (requires $range)"
+            }
+
+        override fun fields() = mapOf(
+            "type" to "unresolved",
+            "id" to id,
+            "dependent" to dependent,
+            "dependentVersion" to dependentVersion.toString(),
+            "range" to range.toString(),
+            "optional" to optional,
+            "reason" to reason.js,
+            "installed" to installed?.toString(),
+            "detail" to detail,
+        )
+    }
+
+    /** Paused updates of [id], held at [version]. */
+    data class Held(val id: String, val version: Version) : ResolveIssue() {
+        override val message get() = "Updates of '$id' are paused at $version"
+        override fun fields() = mapOf("type" to "held", "id" to id, "version" to version.toString())
+    }
+
+    /** Root [id] not served, or not at the requested [version]. */
+    data class Unavailable(val id: String, val version: String? = null) : ResolveIssue() {
+        override val message
+            get() = if (version != null) "Version $version of '$id' is not available"
+            else "Plugin '$id' is not available from any repository"
+
+        override fun fields() = mapOf("type" to "unavailable", "id" to id, "version" to version)
+    }
+}
 
 /** One plugin to download and install. */
 internal data class PlannedAction(
@@ -62,10 +201,12 @@ internal data class ResolveRequest(
     val id: String,
     /** Per-plugin targets keyed by ID. `targets[id]` is the root's. */
     val targets: Map<String, PlanTarget> = emptyMap(),
+    /** Skips untargeted optional dependencies that aren't installed, eg. for updates. */
+    val skipMissingOptionals: Boolean = false,
 )
 
-internal class PluginSystemResolveException(message: String) :
-    PluginSystemError(PluginErrorCodes.RESOLVE_FAILED, message)
+internal class PluginSystemResolveException(val issue: ResolveIssue) :
+    PluginSystemError(PluginErrorCodes.RESOLVE_FAILED, issue.message, details = issue.toJSPayload())
 
 /**
  * Resolves [request] against the given [repos] by priority order.
@@ -83,7 +224,9 @@ internal class PluginSystemResolveException(message: String) :
  *   resolution fails.
  * - Unsatisfied required dependencies are planned recursively. Unresolvables will cause [PluginSystemResolveException].
  * - Unresolvable optional dependencies produce a warning.
- * - A planned version that breaks an installed dependent's range produces a warning.
+ * - With [ResolveRequest.skipMissingOptionals], untargeted optional dependencies that aren't installed are skipped silently.
+ * - A planned version that breaks an installed dependent outside the plan produces a warning.
+ * - A planned version outside a planned dependent's range produces a warning.
  * - Targets for plugins outside the plan are ignored, so one set of targets can serve several plans.
  */
 internal fun resolveInstall(
@@ -94,8 +237,11 @@ internal fun resolveInstall(
     /** Installed plugins' dependency ranges (`dependent id -> dep id -> range`), for conflict warnings. */
     installedDependencies: Map<String, Map<String, VersionRange>> = emptyMap(),
 ): InstallPlan {
-    val warnings = mutableListOf<String>()
+    val warnings = mutableListOf<ResolveIssue>()
     val actions = LinkedHashMap<String, PlannedAction>()
+
+    /** `planned id -> dep id -> range` of planned versions, for conflict warnings. */
+    val plannedDependencies = HashMap<String, Map<String, VersionRange>>()
 
     /** `dependency id -> dependent id -> how`, for [PlannedAction.dependents]. */
     val edges = HashMap<String, MutableMap<String, PlanDependent>>()
@@ -187,25 +333,16 @@ internal fun resolveInstall(
             hold = holdOf(id),
             replaces = installed[id],
         )
-
-        // Does this version break any installed dependent?
-        for ((dependent, deps) in installedDependencies) {
-            val range = deps[id] ?: continue
-            if (!range.satisfies(version)) {
-                warnings += "Installing $id@$version does not satisfy '$dependent' (requires ${range})"
-            }
+        plannedDependencies[id] = entry.dependencies.mapValues { (_, dep) ->
+            dep.version?.let(VersionRange::parse) ?: VersionRange.ANY
         }
 
         for ((depId, dep) in entry.dependencies) {
-            val range = dep.version?.let(VersionRange::parse) ?: VersionRange.ANY
+            val range = plannedDependencies.getValue(id).getValue(depId)
             val target = request.targets[depId]
 
-            val planned = actions[depId]
-            if (planned != null) {
-                if (!range.satisfies(planned.version)) {
-                    // Already planned but two dependents disagree.
-                    warnings += "Planned $depId@${planned.version} does not satisfy $id@$version (requires $range)"
-                }
+            // Already planned. Disagreeing ranges warn after planning.
+            if (depId in actions) {
                 link(depId, id, dep.optional, range)
                 continue
             }
@@ -213,6 +350,8 @@ internal fun resolveInstall(
             val effective = installed[depId]
             // Installed and fine, nothing to do unless the user targeted it
             if (target == null && effective != null && range.satisfies(effective)) continue
+            // The user left it out
+            if (target == null && effective == null && dep.optional && request.skipMissingOptionals) continue
 
             val held = target == null && sources[depId]?.held == true
             val (depChoice, problem) = when {
@@ -221,31 +360,30 @@ internal fun resolveInstall(
                 else -> select(candidatesFor(depId).filter { range.satisfies(it.second) }) to null
             }
 
-            when {
-                depChoice != null -> {
-                    if (effective != null && unchanged(depId, depChoice)) continue
-                    plan(depId, depChoice)
-                    link(depId, id, dep.optional, range)
-                }
-
-                dep.optional -> warnings += problem?.let { "$it; skipped optional dependency of $id@$version" }
-                    ?: "Optional dependency '$depId' of $id@$version is unavailable (requires $range); skipped"
-
-                problem != null -> throw PluginSystemResolveException("$problem, required by $id@$version")
-
-                held -> throw PluginSystemResolveException(
-                    "Dependency '$depId' is held at $effective, which does not satisfy $id@$version " +
-                            "(requires $range); unhold '$depId' to let it update"
-                )
-
-                effective != null -> throw PluginSystemResolveException(
-                    "Dependency '$depId' of $id@$version is installed at $effective but no version satisfying $range is available"
-                )
-
-                else -> throw PluginSystemResolveException(
-                    "Required dependency '$depId' of $id@$version is not installed and not available from any repository (requires $range)"
-                )
+            if (depChoice != null) {
+                if (effective != null && unchanged(depId, depChoice)) continue
+                plan(depId, depChoice)
+                link(depId, id, dep.optional, range)
+                continue
             }
+
+            val issue = ResolveIssue.Unresolved(
+                id = depId,
+                dependent = id,
+                dependentVersion = version,
+                range = range,
+                optional = dep.optional,
+                reason = when {
+                    problem != null -> UnresolvedReason.TARGET
+                    held -> UnresolvedReason.HELD
+                    else -> UnresolvedReason.UNAVAILABLE
+                },
+                installed = effective,
+                detail = problem,
+            )
+
+            if (dep.optional) warnings += issue
+            else throw PluginSystemResolveException(issue)
         }
     }
 
@@ -255,22 +393,44 @@ internal fun resolveInstall(
     val rootChoice = if (rootTarget?.version != null) {
         val exact = Version.parse(rootTarget.version)
         candidatesFor(request.id).firstOrNull { it.second == exact }
-            ?: throw PluginSystemResolveException("Version ${rootTarget.version} of '${request.id}' is not available")
+            ?: throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id, rootTarget.version))
     } else {
         pointerOf(request.id, channelOf(request.id))
             ?: select(candidatesFor(request.id))
-            ?: throw PluginSystemResolveException("Plugin '${request.id}' is not available from any repository")
+            ?: throw PluginSystemResolveException(ResolveIssue.Unavailable(request.id))
     }
 
     installed[request.id]?.let { current ->
         if (unchanged(request.id, rootChoice))
-            return InstallPlan(emptyList(), listOf("'${request.id}' is already at $current"))
+            return InstallPlan(emptyList(), listOf(ResolveIssue.UpToDate(request.id, current)))
         if (rootChoice.second < current) {
-            warnings += "Downgrading '${request.id}' from $current to ${rootChoice.second}"
+            warnings += ResolveIssue.Downgrade(request.id, current, rootChoice.second)
         }
     }
 
     plan(request.id, rootChoice)
+
+    // After planning, so dependents replaced by the plan never count as broken.
+    for (action in actions.values) {
+        for ((dependent, deps) in installedDependencies) {
+            if (dependent in actions) continue
+            val range = deps[action.id] ?: continue
+            if (!range.satisfies(action.version))
+                warnings += ResolveIssue.Breaks(action.id, action.version, dependent, range)
+        }
+
+        for ((dependent, deps) in plannedDependencies) {
+            val range = deps[action.id] ?: continue
+            if (!range.satisfies(action.version))
+                warnings += ResolveIssue.Conflict(
+                    action.id,
+                    action.version,
+                    dependent,
+                    actions.getValue(dependent).version,
+                    range,
+                )
+        }
+    }
 
     /** Installed plugins outside the plan whose range [version] of [id] breaks. */
     fun breaks(id: String, version: Version) = installedDependencies
