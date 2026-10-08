@@ -3,6 +3,10 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+kotlin {
+    jvmToolchain(libs.versions.javaVersion.get().toInt())
+}
+
 android {
     namespace = "io.github.revenge.xposed"
     compileSdk = libs.versions.compileSdk.get().toInt()
@@ -21,6 +25,19 @@ android {
         }
     }
 
+    // Release signing is provided by CI through the environment. Without it, release builds are unsigned.
+    val keystoreFile = providers.environmentVariable("KEYSTORE_FILE").orNull?.takeIf { it.isNotBlank() }
+    if (keystoreFile != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystoreFile)
+                storePassword = providers.environmentVariable("KEYSTORE_PASSWORD").get()
+                keyAlias = providers.environmentVariable("KEY_ALIAS").get()
+                keyPassword = providers.environmentVariable("KEY_PASSWORD").get()
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isDebuggable = true
@@ -29,16 +46,13 @@ android {
         release {
             isDebuggable = false
             isMinifyEnabled = false
+            signingConfig = signingConfigs.findByName("release")
         }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
         targetCompatibility = JavaVersion.toVersion(libs.versions.javaVersion.get())
-    }
-
-    kotlin {
-        jvmToolchain(libs.versions.javaVersion.get().toInt())
     }
 
     buildFeatures {
