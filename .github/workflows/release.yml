@@ -1,105 +1,130 @@
-name: Build Release
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
       versionName:
+        description: Version name (e.g. 1.7.0)
         required: true
-        description: This release's version name
-        default: "1.0.0"
+        type: string
       versionCode:
+        description: Version code (e.g. 1700), also used as the release tag
         required: true
-        description: This release's version code
-        default: "1000"
+        type: number
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 env:
-  JAVA_VERSION: 17
+  # Keep in sync with `javaVersion` in gradle/libs.versions.toml.
+  JAVA_VERSION: 25
 
 jobs:
-  build:
+  release:
+    name: Build & release
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      VERSION_NAME: ${{ inputs.versionName }}
+      VERSION_CODE: ${{ inputs.versionCode }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: temurin
-          cache: gradle
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Set Version
-        uses: chkfung/android-version-actions@v1.1
-        with:
-          gradlePath: app/build.gradle.kts
-          versionCode: ${{ github.event.inputs.versionCode }}
-          versionName: ${{ github.event.inputs.versionName }}
-
-      - name: Commit Version Bump (if changed)
+      - name: Validate inputs
         run: |
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          git add app/build.gradle.kts
-          if git diff --cached --quiet; then
-            echo "No version change."
+          if ! [[ "$VERSION_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Invalid versionName: $VERSION_NAME"
+            exit 1
+          fi
+          if ! [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Invalid versionCode: $VERSION_CODE"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Bump version
+        run: |
+          sed -i -E \
+            -e "s/^(\s*versionCode = ).*/\1$VERSION_CODE/" \
+            -e "s/^(\s*versionName = ).*/\1\"$VERSION_NAME\"/" \
+            app/build.gradle.kts
+          git diff app/build.gradle.kts
+
+          if git diff --quiet app/build.gradle.kts; then
+            echo "Version unchanged."
           else
-            git commit -m "chore: bump version to ${{ github.event.inputs.versionName }} (${{ github.event.inputs.versionCode }})"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore: bump version to $VERSION_NAME ($VERSION_CODE)" app/build.gradle.kts
             git push
           fi
 
-      - name: Prepare Keystore
-        run: |
-          echo "${{ secrets.KEYSTORE }}" | base64 -d > signing-key.jks
-          ls -l signing-key.jks
+      - name: Setup JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Build Universal APKs
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      - name: Decode keystore
         env:
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+        run: |
+          if [ -z "$KEYSTORE" ]; then
+            echo "::error::The KEYSTORE secret is required for releases."
+            exit 1
+          fi
+          echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/signing-key.jks"
+
+      - name: Build APKs
+        env:
+          KEYSTORE_FILE: ${{ runner.temp }}/signing-key.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          GRADLE_OPTS: -Dorg.gradle.daemon=false
-        run: |
-          ./gradlew packageDebugUniversalApk packageReleaseUniversalApk \
-            -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-            -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
-            -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-            -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+        run: ./gradlew :app:assembleDebug :app:assembleRelease
 
       - name: Collect APKs
         run: |
           mkdir dist
-          mv app/build/outputs/apk_from_bundle/debug/app-debug-universal.apk dist/app-debug.apk
-          mv app/build/outputs/apk_from_bundle/release/app-release-universal.apk dist/app-release.apk
+          mv app/build/outputs/apk/debug/app-debug.apk dist/app-debug.apk
+          mv app/build/outputs/apk/release/app-release.apk dist/app-release.apk
           ls -l dist
 
-      - name: Upload APK Artifacts
-        uses: actions/upload-artifact@v4
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.apk
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
         with:
           name: release-apks
           path: dist/*.apk
           if-no-files-found: error
 
-      - name: Create Tag and Release
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tag=${{ github.event.inputs.versionCode }}
-          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-            echo "Tag $tag already exists, skipping creation."
-          else
-            git tag "$tag"
-            git push origin "$tag"
+          if gh release view "$VERSION_CODE" >/dev/null 2>&1; then
+            echo "::error::Release $VERSION_CODE already exists."
+            exit 1
           fi
-          gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" \
-            --title "${{ github.event.inputs.versionName }}" \
+          gh release create "$VERSION_CODE" \
+            --target "$(git rev-parse HEAD)" \
+            --title "$VERSION_NAME" \
             --generate-notes \
             dist/app-debug.apk dist/app-release.apk

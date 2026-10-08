@@ -1,79 +1,87 @@
-name: Build APK
+name: Build
 
 on:
   push:
-    branches: [ '**' ]
+    branches: ['**']
+    paths-ignore: ['**.md', 'assets/**', '.idea/**']
   pull_request:
+    paths-ignore: ['**.md', 'assets/**', '.idea/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 env:
-  JAVA_VERSION: 17
+  # Keep in sync with `javaVersion` in gradle/libs.versions.toml.
+  JAVA_VERSION: 25
 
 jobs:
   build:
+    name: Build & test
+    # Same-repo PRs are already covered by the push event.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      # Dependency graph submission (Dependabot alerts) on the default branch.
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
+      - name: Setup JDK
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          dependency-graph: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && 'generate-and-submit' || 'disabled' }}
 
-      - name: Make Gradle executable
-        run: chmod +x ./gradlew
-
-      - name: Optional Keystore (if provided)
+      - name: Decode keystore
+        id: keystore
         env:
           KEYSTORE: ${{ secrets.KEYSTORE }}
         run: |
           if [ -n "$KEYSTORE" ]; then
-            echo "$KEYSTORE" | base64 -d > signing-key.jks
-            ls -l signing-key.jks
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/signing-key.jks"
+            echo "file=$RUNNER_TEMP/signing-key.jks" >> "$GITHUB_OUTPUT"
           else
-            echo "No keystore provided, skipping..."
+            echo "::notice::No keystore available, release APK will be unsigned."
           fi
 
-      - name: Assemble Debug and Release
+      - name: Build and test
         env:
+          KEYSTORE_FILE: ${{ steps.keystore.outputs.file }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          GRADLE_OPTS: -Dorg.gradle.daemon=false
-        run: |
-          if [ -f signing-key.jks ]; then
-            ./gradlew assembleDebug assembleRelease \
-              -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/signing-key.jks \
-              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
-              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
-          else
-            ./gradlew assembleDebug assembleRelease
-          fi
+        run: >-
+          ./gradlew
+          :app:assembleDebug
+          :app:assembleRelease
+          :app:testDebugUnitTest
+          :api:publishToMavenLocal
 
-      - name: Collect APKs
-        run: |
-          mkdir -p dist
-          cp app/build/outputs/apk/debug/*.apk dist/ || true
-          # Prefer signed release if produced
-            if ls app/build/outputs/apk/release/*-signed.apk >/dev/null 2>&1; then
-              cp app/build/outputs/apk/release/*-signed.apk dist/
-            else
-              cp app/build/outputs/apk/release/*.apk dist/
-            fi
-          ls -1 dist
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: '**/build/reports/tests/'
+          if-no-files-found: ignore
 
-      - name: Upload All APKs
-        uses: actions/upload-artifact@v4
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
         with:
           name: apks
-          path: dist/*.apk
+          path: app/build/outputs/apk/*/*.apk
           if-no-files-found: error
