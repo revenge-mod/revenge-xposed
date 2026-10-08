@@ -12,6 +12,7 @@ val pluginMethods by tweak {
     pluginSystemMethod("revenge.plugins.getConstants") {
         mapOf(
             "storageRootPath" to pluginStorageRoot(appInfo.dataDir).absolutePath,
+            "distRootPath" to externalPluginsRoot(appInfo.dataDir).absolutePath,
             "defaultsOnlySlot" to PluginStatesStore.DEFAULTS_SLOT,
         )
     }
