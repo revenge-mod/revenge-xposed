@@ -46,8 +46,8 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if [ "$TAG" != "api/v$VERSION" ]; then
-            echo "::error::Tag $TAG does not match apiVersion $VERSION (expected api/v$VERSION)"
+          if [ "$TAG" != "api@$VERSION" ]; then
+            echo "::error::Tag $TAG does not match apiVersion $VERSION (expected api@$VERSION)"
             exit 1
           fi
 
