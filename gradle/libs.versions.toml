@@ -3,7 +3,7 @@ agp = "9.2.1"
 kotlin = "2.4.10"
 
 # Published :api version
-apiVersion = "1.0.0"
+apiVersion = "1.1.0"
 
 androidxCore = "1.19.0"
 coroutines = "1.11.0"
