@@ -32,6 +32,10 @@ internal class PluginScopeImpl(
     override val log: Logger = logger("plugin:${plugin.manifest.id}")
     override val manifest = plugin.manifest
 
+    override val pluginDir: File by lazy {
+        File(externalPluginsRoot(appInfo.dataDir), manifest.id)
+    }
+
     override val storageDir: File by lazy {
         pluginStorageRoot(appInfo.dataDir).resolve(manifest.id).apply {
             mkdirs()
