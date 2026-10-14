@@ -27,6 +27,8 @@ data class BundleManifest(
         /** On until the user says otherwise. */
         val enabledByDefault: Boolean = false,
         val dependencies: Map<String, PluginDependency> = emptyMap(),
+        /** Overrides the bundle version. Stubs ([defaultSource]) only. */
+        val version: String? = null,
         val defaultSource: PluginSource? = null,
     )
 

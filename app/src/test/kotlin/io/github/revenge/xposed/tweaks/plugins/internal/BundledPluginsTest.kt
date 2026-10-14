@@ -82,6 +82,25 @@ class BundledPluginsTest {
     }
 
     @Test
+    fun `stubs can override the bundle version`() {
+        val plugins = parseBundledPlugins(
+            """
+            {
+              "version": "1.0.0",
+              "plugins": [
+                { "id": "revenge.api.themes", "version": "0.1.0", "defaultSource": { "repo": "https://example.com" } },
+                { "id": "revenge.settings", "version": "2.0.0" }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        // Only stubs may, so the other entry is skipped.
+        assertEquals(listOf("revenge.api.themes"), plugins.map { it.manifest.id })
+        assertEquals(Version.parse("0.1.0"), plugins.single().manifest.version)
+    }
+
+    @Test
     fun `a malformed entry does not take the rest of the set down`() {
         val plugins = parseBundledPlugins(
             """

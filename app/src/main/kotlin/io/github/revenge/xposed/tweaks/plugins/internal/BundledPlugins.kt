@@ -49,8 +49,9 @@ private fun BundleManifest.Plugin.internalFlags() = buildSet {
 }
 
 // JS will fill these in later.
-private fun BundleManifest.Plugin.toPluginManifest(version: Version): PluginManifest {
+private fun BundleManifest.Plugin.toPluginManifest(bundleVersion: Version): PluginManifest {
     requireValidPluginId(id)
+    require(version == null || defaultSource != null) { "Only stubs can override the bundle version" }
 
     return PluginManifest(
         id = id,
@@ -64,6 +65,6 @@ private fun BundleManifest.Plugin.toPluginManifest(version: Version): PluginMani
                 optional = dep.optional,
             )
         },
-        version = version,
+        version = version?.let(Version::parse) ?: bundleVersion,
     )
 }
