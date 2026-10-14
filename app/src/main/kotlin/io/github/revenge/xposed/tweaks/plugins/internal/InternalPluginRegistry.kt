@@ -4,6 +4,7 @@ import io.github.revenge.plugins.PluginBuilder
 import io.github.revenge.plugins.PluginDependency
 import io.github.revenge.plugins.PluginManifest
 import io.github.revenge.plugins.plugin
+import io.github.revenge.xposed.tweaks.bundleManifest
 import io.github.revenge.xposed.tweaks.plugins.PluginFactory
 import io.github.revenge.xposed.tweaks.plugins.repos.PluginSource
 
@@ -60,8 +61,15 @@ internal val internalPlugins: List<PluginFactory> by lazy {
     listOf(apiProviderPlugin, discordProviderPlugin, recoveryPlugin, noTrackPlugin, preventOtaUpdatesPlugin)
 }
 
+/** Native internal plugins and bundled (JS-only) ones from [bundleManifest]. */
+internal val allInternalPlugins: List<PluginFactory> by lazy {
+    internalPlugins + bundledPlugins(bundleManifest)
+        // Not an existing internal plugin
+        .filterNot { b -> internalPlugins.any { it.manifest.id == b.manifest.id } }
+}
+
 /** Internal plugin with [id], stubs included. */
-internal fun internalPluginOf(id: String): PluginFactory? = internalPlugins.find { it.manifest.id == id }
+internal fun internalPluginOf(id: String): PluginFactory? = allInternalPlugins.find { it.manifest.id == id }
 
 /** Defaults sources to record, skipping plugins that already have provenance. */
 internal fun defaultSourcesToSeed(

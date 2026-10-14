@@ -1,7 +1,6 @@
 package io.github.revenge.xposed.tweaks.plugins
 
 import io.github.revenge.xposed.tweak
-import io.github.revenge.xposed.tweaks.bundleManifest
 import io.github.revenge.xposed.tweaks.plugins.external.MANIFEST_FILE
 import io.github.revenge.xposed.tweaks.plugins.external.discoverExternalPlugins
 import io.github.revenge.xposed.tweaks.plugins.internal.*
@@ -14,13 +13,9 @@ val pluginLoader by tweak {
     // Load states before anything reads or writes a slot.
     PluginStatesStore.ensureLoaded(appInfo.dataDir)
 
-    val bundled = bundledPlugins(bundleManifest)
-        // Not an existing internal plugin
-        .filterNot { b -> internalPlugins.any { it.manifest.id == b.manifest.id } }
-
     // Register default provenances.
     val sources = SourcesStore.ensureLoaded(appInfo.dataDir).toMutableMap()
-    for ((id, source) in defaultSourcesToSeed(internalPlugins + bundled, sources)) {
+    for ((id, source) in defaultSourcesToSeed(allInternalPlugins, sources)) {
         runCatching { SourcesStore.set(id, source) }
             .onSuccess { sources[id] = source }
             .onFailure { pluginLog.e("Failed to record stub source for $id", it) }
@@ -28,12 +23,12 @@ val pluginLoader by tweak {
 
     // Installed copies of internals with provenance win, and load as external plugins.
     val distRoot = externalPluginsRoot(appInfo.dataDir)
-    val shadowed = shadowedInternalIds(internalPlugins + bundled, sources) { id ->
+    val shadowed = shadowedInternalIds(allInternalPlugins, sources) { id ->
         File(File(distRoot, id), MANIFEST_FILE).isFile
     }
     for (id in shadowed) pluginLog.i("Using installed copy of internal plugin: $id")
 
-    val known = (internalPlugins + bundled).filterNot { it.manifest.id in shadowed }
+    val known = allInternalPlugins.filterNot { it.manifest.id in shadowed }
 
     val discovery = discoverExternalPlugins(appInfo.dataDir, known.associate { it.manifest.id to it.manifest })
     val external = discovery.factories
