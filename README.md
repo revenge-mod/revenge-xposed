@@ -73,6 +73,26 @@ You'll need a JDK (25 recommended) and the Android SDK. Once you have those, fol
 
 <sub>Native plugins link against the `io.github.revenge:api` artifact.</sub>
 
+The API is also published to [GitHub Packages](https://github.com/revenge-mod/revenge-xposed/packages). GitHub Packages requires authentication even for public packages, so use a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope:
+
+```kotlin
+repositories {
+    maven {
+        url = uri("https://maven.pkg.github.com/revenge-mod/revenge-xposed")
+        credentials {
+            username = providers.gradleProperty("gpr.user").orNull
+            password = providers.gradleProperty("gpr.key").orNull
+        }
+    }
+}
+
+dependencies {
+    compileOnly("io.github.revenge:api:<version>")
+}
+```
+
+<sub>To publish a new version, bump `apiVersion` in `gradle/libs.versions.toml`, then push an `api@<version>` tag or run the **Publish API** workflow.</sub>
+
 ## 📄 License
 
 This project is licensed under the GPL-3.0 License. See [LICENSE](LICENSE) for details.
