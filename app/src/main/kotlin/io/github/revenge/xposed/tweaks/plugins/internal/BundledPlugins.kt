@@ -48,16 +48,17 @@ private fun BundleManifest.Plugin.internalFlags() = buildSet {
     if (enabledByDefault) add(InternalPluginFlags.ENABLED_BY_DEFAULT)
 }
 
-// JS will fill these in later.
 private fun BundleManifest.Plugin.toPluginManifest(bundleVersion: Version): PluginManifest {
     requireValidPluginId(id)
     require(version == null || defaultSource != null) { "Only stubs can override the bundle version" }
 
     return PluginManifest(
         id = id,
-        name = id,
-        description = "",
-        author = "",
+        name = name ?: id,
+        description = description.orEmpty(),
+        author = author.orEmpty(),
+        contributors = contributors,
+        icon = icon,
         dependencies = dependencies.entries.associate { (depId, dep) ->
             requireValidPluginId(depId)
             depId to PluginDependency(

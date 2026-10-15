@@ -101,6 +101,33 @@ class BundledPluginsTest {
     }
 
     @Test
+    fun `stubs carry their metadata`() {
+        val plugins = parseBundledPlugins(
+            """
+            {
+              "version": "1.0.0",
+              "plugins": [
+                {
+                  "id": "revenge.settings.themes",
+                  "name": "Theme Settings",
+                  "description": "Manage your themes.",
+                  "author": "Revenge",
+                  "icon": "PaintPaletteIcon",
+                  "defaultSource": { "repo": "https://example.com" }
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val manifest = plugins.single().manifest
+        assertEquals("Theme Settings", manifest.name)
+        assertEquals("Manage your themes.", manifest.description)
+        assertEquals("Revenge", manifest.author)
+        assertEquals("PaintPaletteIcon", manifest.icon)
+    }
+
+    @Test
     fun `a malformed entry does not take the rest of the set down`() {
         val plugins = parseBundledPlugins(
             """

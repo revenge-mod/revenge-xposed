@@ -29,6 +29,12 @@ data class BundleManifest(
         val dependencies: Map<String, PluginDependency> = emptyMap(),
         /** Overrides the bundle version. Stubs ([defaultSource]) only. */
         val version: String? = null,
+        // Metadata for stubs only.
+        val name: String? = null,
+        val description: String? = null,
+        val author: String? = null,
+        val contributors: List<String> = emptyList(),
+        val icon: String? = null,
         val defaultSource: PluginSource? = null,
     )
 
