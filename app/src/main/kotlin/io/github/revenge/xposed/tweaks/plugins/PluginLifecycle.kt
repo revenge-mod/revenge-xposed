@@ -269,8 +269,10 @@ internal suspend fun disablePlugin(pluginId: String) {
 
     PluginStatesStore.batchSave {
         for (id in toDisable) {
-            val plugin = loaded[id]
-            val currentFlags = plugin?.scope?.flags?.value ?: emptySet()
+            // JS plugins stop before disabling, so loaded[id] will be null
+            // JS stop()s can record requireReload, so we need to also read from the slot as well.
+            val currentFlags = loaded[id]?.scope?.flags?.value
+                ?: PluginStatesStore.boot.entryFlags(id).orEmpty()
             val newFlags = currentFlags.filter { it.persistAfterDisable }.toSet()
             writeActiveSlotFlags(id, newFlags)
 
