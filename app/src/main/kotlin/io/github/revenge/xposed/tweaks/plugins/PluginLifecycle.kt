@@ -108,8 +108,9 @@ internal fun loadPlugin(
     val scope = PluginScopeImpl(host, plugin, flags)
     val bootSlot = PluginStatesStore.boot
 
-    // `drop(1)` skips the initial load so we don't re-persist the values we just loaded.
-    val persistJob = flags.drop(1).onEach { newFlags ->
+    // `drop(1)` to skip the initial load so we don't re-persist the values we just loaded.
+    // Late starts don't drop since we need to sync STARTED_LATE back to JS.
+    val persistJob = flags.drop(if (late) 0 else 1).onEach { newFlags ->
         writeSlotFlags(bootSlot, manifest.id, newFlags)
     }.launchIn(pluginJobScope)
 
