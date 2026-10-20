@@ -4,26 +4,23 @@ import android.content.pm.ApplicationInfo
 import io.github.revenge.logger
 import kotlinx.serialization.Serializable
 import org.luckypray.dexkit.DexKitBridge
-import org.luckypray.dexkit.result.ClassData
-import org.luckypray.dexkit.result.MethodData
-import org.luckypray.dexkit.wrap.DexClass
-import org.luckypray.dexkit.wrap.DexMethod
+import org.luckypray.dexkit.query.FindClass
+import org.luckypray.dexkit.query.FindField
+import org.luckypray.dexkit.query.FindMethod
 import java.io.File
-import java.lang.reflect.Method
+import io.github.revenge.xposed.api.DexFinder as DexFinderApi
 
 /**
- * Finds obfuscated host classes and methods with DexKit.
+ * [DexFinderApi], shared by tweaks and plugins.
  *
- * Results are cached by descriptor per host APK and module build, so later launches skip the scan.
+ * Results are cached as strings (descriptors for members) per host APK and module build, so later launches skip the scan.
  * Misses are cached too, since a member missing from one APK stays missing until the APK changes.
- *
- * Prefer a stable name (JNI natives, `@DoNotStrip` members, React methods, manifest components) when one exists,
- * and use this only for members that R8 renames.
  */
-object DexFinder {
+object DexFinder : DexFinderApi {
     private val log = logger("dexFinder")
 
-    private lateinit var classLoader: ClassLoader
+    override lateinit var classLoader: ClassLoader
+        private set
     private lateinit var cacheFile: File
     private lateinit var cache: Cache
 
@@ -32,7 +29,7 @@ object DexFinder {
     private var nativeLoaded = false
 
     @Serializable
-    private data class Cache(val key: String, val entries: MutableMap<String, String> = mutableMapOf())
+    private data class Cache(val key: String, val entries: MutableMap<String, String?> = mutableMapOf())
 
     @Synchronized
     fun init(appInfo: ApplicationInfo, classLoader: ClassLoader, modulePath: String) {
@@ -48,32 +45,19 @@ object DexFinder {
     }
 
     /**
-     * Finds a class by [query], or returns `null` if nothing matched.
+     * Finds a value by [query], or returns `null` if nothing matched.
+     *
+     * The value is cached as the string [encode] returns, and [decode] turns that string back into the result.
      *
      * @param key A unique, stable name for the lookup, used as the cache key.
      */
     @Synchronized
-    fun findClass(key: String, query: DexKitBridge.() -> ClassData?): Class<*>? =
-        find(key, { DexClass(it).getInstance(classLoader) }) { query()?.descriptor }
-
-    /**
-     * Finds a method by [query], or returns `null` if nothing matched.
-     *
-     * @param key A unique, stable name for the lookup, used as the cache key.
-     */
-    @Synchronized
-    fun findMethod(key: String, query: DexKitBridge.() -> MethodData?): Method? =
-        find(key, { DexMethod(it).getMethodInstance(classLoader).apply { isAccessible = true } }) {
-            query()?.descriptor
-        }
-
-    /**
-     * Reads a value from the dex by [query], such as a constant R8 inlined, or returns `null` if nothing matched.
-     *
-     * @param key A unique, stable name for the lookup, used as the cache key.
-     */
-    @Synchronized
-    fun findString(key: String, query: DexKitBridge.() -> String?): String? = find(key, { it }, query)
+    override fun <R : Any, T> findValue(
+        key: String,
+        encode: (R) -> String,
+        decode: (String) -> T,
+        query: DexKitBridge.() -> R?,
+    ): T? = find(key, decode) { query()?.let(encode) }
 
     /** Closes the DexKit bridge opened during startup. Lookups after this open and close their own bridge. */
     @Synchronized
@@ -84,8 +68,8 @@ object DexFinder {
     }
 
     private fun <T> find(key: String, resolve: (String) -> T, query: DexKitBridge.() -> String?): T? {
-        cache.entries[key]?.let { descriptor ->
-            if (descriptor.isEmpty()) return null
+        if (key in cache.entries) {
+            val descriptor = cache.entries[key] ?: return null
             runCatching { return resolve(descriptor) }
                 .onFailure { log.w("Cached result for $key no longer resolves: $descriptor", it) }
         }
@@ -101,7 +85,7 @@ object DexFinder {
             if (released) closeBridge()
         }
 
-        cache.entries[key] = descriptor ?: ""
+        cache.entries[key] = descriptor
         saveCache()
 
         return descriptor?.let {
@@ -139,4 +123,20 @@ object DexFinder {
             if (!temp.renameTo(cacheFile)) error("Unable to replace ${cacheFile.path}")
         }.onFailure { log.w("Unable to save the DexKit cache", it) }
     }
+}
+
+/** Prefixes named [DexFinder] lookup keys with [prefix] to not collide with other plugins or the host. */
+class ScopedDexFinder(private val prefix: String) : DexFinderApi {
+    override val classLoader get() = DexFinder.classLoader
+
+    override fun <R : Any, T> findValue(
+        key: String,
+        encode: (R) -> String,
+        decode: (String) -> T,
+        query: DexKitBridge.() -> R?,
+    ): T? = DexFinder.findValue("$prefix$key", encode, decode, query)
+
+    override fun findClass(query: FindClass.() -> Unit) = DexFinder.findClass(query)
+    override fun findMethod(query: FindMethod.() -> Unit) = DexFinder.findMethod(query)
+    override fun findField(query: FindField.() -> Unit) = DexFinder.findField(query)
 }

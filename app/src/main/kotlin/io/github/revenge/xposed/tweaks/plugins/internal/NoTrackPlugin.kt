@@ -102,14 +102,12 @@ internal val noTrackPlugin =
 
 /** Finds `SentryAndroid.init(Context, ILogger, OptionsConfiguration)`, which overloads call. */
 private fun findSentryInit(): Method? =
-    DexFinder.findMethod("SentryAndroid.init") {
-        findMethod {
-            matcher {
-                modifiers(Modifier.STATIC)
-                paramTypes("android.content.Context", null, null)
-                usingStrings("Fatal error during SentryAndroid.init(...)")
-            }
-        }.singleOrNull()
+    DexFinder.findMethod {
+        matcher {
+            modifiers(Modifier.STATIC)
+            paramTypes("android.content.Context", null, null)
+            usingStrings("Fatal error during SentryAndroid.init(...)")
+        }
     }
 
 /**

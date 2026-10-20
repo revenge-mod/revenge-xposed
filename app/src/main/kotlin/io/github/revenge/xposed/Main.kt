@@ -93,6 +93,7 @@ private class HostScopeImpl(
     override val classLoader: ClassLoader,
 ) : HostScope {
     override val bridge: RevengeBridge get() = RevengeBridgeRegistry
+    override val dexFinder: DexFinder get() = DexFinder
     override fun withAppContext(block: (Context) -> Unit) = io.github.revenge.xposed.tweaks.base.withAppContext(block)
     override fun withAppActivity(block: (Activity) -> Unit) =
         io.github.revenge.xposed.tweaks.base.withAppActivity(block)

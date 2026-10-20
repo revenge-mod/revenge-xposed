@@ -92,14 +92,12 @@ val scriptLoader by tweak {
  * R8 renames it, and may merge it with unrelated classes.
  */
 private fun findBundleLoaderDelegate(): Class<*>? =
-    DexFinder.findMethod("ReactInstance.loadJSBundle.loadScriptFromFile") {
-        findMethod {
-            matcher {
-                declaredClass { addInterface("com.facebook.react.bridge.JSBundleLoaderDelegate") }
-                name("loadScriptFromFile")
-                addInvoke { declaredClass("com.facebook.react.runtime.ReactInstance") }
-            }
-        }.singleOrNull()
+    DexFinder.findMethod {
+        matcher {
+            declaredClass { addInterface("com.facebook.react.bridge.JSBundleLoaderDelegate") }
+            name("loadScriptFromFile")
+            addInvoke { declaredClass("com.facebook.react.runtime.ReactInstance") }
+        }
     }?.declaringClass
 
 /**

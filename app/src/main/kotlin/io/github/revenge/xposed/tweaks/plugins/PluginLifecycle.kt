@@ -4,6 +4,8 @@ import io.github.revenge.Logger
 import io.github.revenge.logger
 import io.github.revenge.plugins.Plugin
 import io.github.revenge.plugins.PluginScope
+import io.github.revenge.xposed.ScopedDexFinder
+import io.github.revenge.xposed.api.DexFinder
 import io.github.revenge.xposed.api.HostScope
 import io.github.revenge.xposed.api.callJSMethod
 import io.github.revenge.xposed.tweaks.plugins.internal.InternalPluginFlags
@@ -31,6 +33,8 @@ internal class PluginScopeImpl(
 ) : PluginScope, HostScope by tweakScope {
     override val log: Logger = logger("plugin:${plugin.manifest.id}")
     override val manifest = plugin.manifest
+
+    override val dexFinder: DexFinder = ScopedDexFinder("plugin:${manifest.id}@${manifest.version}:")
 
     override val pluginDir: File by lazy {
         File(externalPluginsRoot(appInfo.dataDir), manifest.id)
