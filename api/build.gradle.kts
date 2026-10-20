@@ -40,7 +40,7 @@ android {
 }
 
 dependencies {
-    api(libs.xposed.api)
+    compileOnly(libs.xposed.api)
     api(libs.dexkit)
     compileOnly(libs.kotlinx.coroutines.android)
 }
