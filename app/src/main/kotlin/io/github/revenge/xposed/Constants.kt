@@ -2,7 +2,6 @@ package io.github.revenge.xposed
 
 object RevengeConstants {
     const val TARGET_PACKAGE = "com.discord"
-    const val TARGET_ACTIVITY = "$TARGET_PACKAGE.react_activities.ReactActivity"
 
     // @TODO: Migration to revenge named dir
     const val FILES_DIR = "files/pyoncord"

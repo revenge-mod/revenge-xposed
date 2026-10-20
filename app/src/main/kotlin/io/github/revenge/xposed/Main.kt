@@ -81,7 +81,9 @@ class Main : IXposedHookLoadPackage, IXposedHookZygoteInit {
             appInfo = param.appInfo,
             classLoader = param.classLoader,
         )
+        DexFinder.init(param.appInfo, param.classLoader, modulePath)
         for (spec in tweaks) spec.applyTo(ctx)
+        DexFinder.release()
     }
 }
 

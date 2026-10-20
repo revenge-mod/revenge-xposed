@@ -77,9 +77,30 @@ val scriptLoader by tweak {
     // scriptAssets must be first
     if (!injectors.contains(scriptAssetsInjector)) injectors.add(0, scriptAssetsInjector)
 
-    // @Target: This may change between versions
-    hookLoader(classLoader.loadClass($$"com.facebook.react.runtime.ReactInstance$loadJSBundle$1"))
+    val delegate = classLoader.loadClassOrNull($$"com.facebook.react.runtime.ReactInstance$loadJSBundle$1")
+        ?: findBundleLoaderDelegate()
+        ?: run {
+            log.e("Unable to find the JSBundleLoaderDelegate used by ReactInstance")
+            return@tweak
+        }
+
+    hookLoader(delegate)
 }
+
+/**
+ * Finds the `JSBundleLoaderDelegate` implementation that `ReactInstance.loadJSBundle` creates.
+ * R8 renames it, and may merge it with unrelated classes.
+ */
+private fun findBundleLoaderDelegate(): Class<*>? =
+    DexFinder.findMethod("ReactInstance.loadJSBundle.loadScriptFromFile") {
+        findMethod {
+            matcher {
+                declaredClass { addInterface("com.facebook.react.bridge.JSBundleLoaderDelegate") }
+                name("loadScriptFromFile")
+                addInvoke { declaredClass("com.facebook.react.runtime.ReactInstance") }
+            }
+        }.singleOrNull()
+    }?.declaringClass
 
 /**
  * Hooks `loadScriptFromAssets` and `loadScriptFromFile` to run injectors before the host app's bundle.

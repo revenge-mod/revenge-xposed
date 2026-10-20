@@ -7,6 +7,7 @@ apiVersion = "1.1.0"
 
 androidxCore = "1.19.0"
 coroutines = "1.11.0"
+dexkit = "2.3.0"
 ktor = "3.5.1"
 serialization = "1.11.0"
 xposed = "82"
@@ -19,6 +20,7 @@ javaVersion = "25"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "androidxCore" }
+dexkit = { module = "org.luckypray:dexkit", version.ref = "dexkit" }
 kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test-junit", version.ref = "kotlin" }

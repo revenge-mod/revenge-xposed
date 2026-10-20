@@ -33,12 +33,20 @@ val discordDevSupport by tweak {
         }
     }
 
+    val devSupportManagers = listOf(
+        "com.facebook.react.devsupport.BridgeDevSupportManager",
+        "com.facebook.react.devsupport.BridgelessDevSupportManager",
+    ).mapNotNull { classLoader.loadClassOrNull(it) }
+
+    // Since 352.2, R8 removes everything but the no-op ReleaseDevSupportManager.
+    if (devSupportManagers.isEmpty()) {
+        log.w("This Discord build doesn't include React Native's dev support, so LogBox and shake to recover are unavailable")
+        return@tweak
+    }
+
     // Wire `showDevOptionsDialog` (shake gesture) to the Revenge recovery dialog instead of RN's default dev menu
     withAppContext { ctx ->
-        listOf(
-            "com.facebook.react.devsupport.BridgeDevSupportManager",
-            "com.facebook.react.devsupport.BridgelessDevSupportManager",
-        ).mapNotNull { classLoader.loadClassOrNull(it) }.forEach { cls ->
+        devSupportManagers.forEach { cls ->
             runCatching {
                 val show = cls.declaredMethods.firstOrNull { it.name == "showDevOptionsDialog" }
                     ?: return@runCatching

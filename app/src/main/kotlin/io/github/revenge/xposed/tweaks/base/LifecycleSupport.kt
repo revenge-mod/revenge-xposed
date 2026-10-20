@@ -4,11 +4,13 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.os.Bundle
-import io.github.revenge.xposed.RevengeConstants
+import io.github.revenge.xposed.Tweak
 import io.github.revenge.xposed.hook
 import io.github.revenge.xposed.method
 import io.github.revenge.xposed.tweak
 import java.lang.ref.WeakReference
+import java.lang.reflect.Method
+import java.util.concurrent.atomic.AtomicBoolean
 
 @Volatile
 private var contextRef = WeakReference<Context>(null)
@@ -22,23 +24,53 @@ private val contextSubscribers = mutableListOf<(Context) -> Unit>()
 private val activitySubscribers = mutableListOf<(Activity) -> Unit>()
 
 /**
- * Captures [Context] (from `ContextWrapper.attachBaseContext`) and [Activity] (from the target `ReactActivity.onCreate`),
+ * Captures [Context] (from `ContextWrapper.attachBaseContext`) and [Activity] (from the launcher activity's `onCreate`),
  * so other tweaks can use [withAppContext]/[withAppActivity] to await them.
+ *
+ * The launcher activity is resolved from the package manager, since its class name isn't stable across Discord versions.
  */
 val lifecycleSupport by tweak {
-    val reactActivity = classLoader.loadClass(RevengeConstants.TARGET_ACTIVITY)
+    val activityHooked = AtomicBoolean(false)
 
     ContextWrapper::class.java.method("attachBaseContext", Context::class.java).hook {
         after {
             val ctx = args[0] as Context
+            if (activityHooked.compareAndSet(false, true)) hookLauncherActivity(ctx)
+
             contextRef = WeakReference(ctx)
             log.i("Got Context")
             drainContextSubscribers(ctx)
         }
     }
+}
 
-    reactActivity.method("onCreate", Bundle::class.java).hook {
+private fun Tweak.hookLauncherActivity(ctx: Context) {
+    val name = try {
+        launcherActivityName(ctx)
+    } catch (e: Throwable) {
+        log.e("Unable to resolve the launcher activity", e)
+        return
+    }
+
+    // The nearest declaration may belong to a superclass, so filter by the exact class.
+    var cls: Class<*>? = classLoader.loadClass(name)
+    var onCreate: Method? = null
+    while (cls != null && onCreate == null) {
+        val current = cls
+        onCreate = runCatching { current.method("onCreate", Bundle::class.java) }.getOrNull()
+        cls = current.superclass
+    }
+
+    if (onCreate == null) {
+        log.e("No onCreate found for launcher activity $name")
+        return
+    }
+
+    log.i("Hooking launcher activity $name (onCreate in ${onCreate.declaringClass.name})")
+    onCreate.hook {
         after {
+            if (thisObject?.javaClass?.name != name) return@after
+
             val act = thisObject as Activity
             activityRef = WeakReference(act)
             log.i("Got Activity")
@@ -51,6 +83,16 @@ val lifecycleSupport by tweak {
             drainActivitySubscribers(act)
         }
     }
+}
+
+/** Returns the class name of the activity that the launcher intent resolves to, following activity aliases. */
+private fun launcherActivityName(ctx: Context): String {
+    val pm = ctx.packageManager
+    val intent = pm.getLaunchIntentForPackage(ctx.packageName)
+        ?: error("No launch intent for ${ctx.packageName}")
+    val info = pm.resolveActivity(intent, 0)?.activityInfo
+        ?: error("Launch intent for ${ctx.packageName} doesn't resolve")
+    return info.targetActivity ?: info.name
 }
 
 private fun drainContextSubscribers(ctx: Context) {
