@@ -18,6 +18,8 @@ internal data class PluginUpdate(
     val warnings: List<ResolveIssue>,
     /** Why the update can't install. */
     val blocker: ResolveIssue?,
+    /** What [channel] points to when it can't resolve and [available] fell back below it. */
+    val channelVersion: Version? = null,
 )
 
 /**
@@ -27,6 +29,8 @@ internal data class PluginUpdate(
  *   or the same version got republished with another artifact.
  * - Held plugins get a [ResolveIssue.Held] blocker. A held dependency outside a new version's range blocks too.
  * - Each update resolves with [ResolveRequest.skipMissingOptionals]. A failure becomes [PluginUpdate.blocker].
+ * - A pointed version that can't resolve offers the newest older version that can, with [PluginUpdate.channelVersion],
+ *   or nothing when that isn't newer.
  * - [ResolveIssue.Breaks] gets [ResolveIssue.Breaks.fixedBy] when the broken dependent has an unblocked update
  *   accepting the planned version.
  */
@@ -70,18 +74,34 @@ internal fun findUpdates(
                 null to e.issue
             }
 
-            entries[id] = entry
+            // An incompatible pointer falls back to an older version, which may be no update at all
+            var version = available
+            var versionEntry = entry
+            var channelVersion: Version? = null
+            if (plan != null) {
+                val planned = plan.actions.firstOrNull { it.id == id }?.version ?: continue
+                if (planned != available) {
+                    if (planned <= current) continue
+                    version = planned
+                    channelVersion = available
+                    versionEntry = plugin.versions.entries
+                        .first { (key, _) -> runCatching { Version.parse(key) }.getOrNull() == planned }.value
+                }
+            }
+
+            entries[id] = versionEntry
             add(
                 PluginUpdate(
                     id = id,
                     installed = current,
-                    available = available,
+                    available = version,
                     channel = source.channel,
                     repo = repo,
-                    size = entry.size,
+                    size = versionEntry.size,
                     includes = plan?.actions.orEmpty().filter { it.id != id },
                     warnings = plan?.warnings.orEmpty(),
                     blocker = blocker,
+                    channelVersion = channelVersion,
                 )
             )
         }

@@ -62,6 +62,46 @@ class UpdatesTest {
         assertTrue(updates.isEmpty())
     }
 
+    /** `latest` points to 1.0.8, which requires a `discord` older than installed. */
+    private fun incompatibleLatest() = repos(
+        "com.example.app" to plugin(
+            "1.0.8",
+            "1.0.5" to version(),
+            "1.0.6" to version(size = 42, "discord" to "*"),
+            "1.0.8" to version(size = 7, "discord" to "<=352.2"),
+        ),
+    )
+
+    @Test
+    fun `an incompatible channel pointer offers the newest compatible version instead`() {
+        val updates = findUpdates(
+            incompatibleLatest(),
+            installed = mapOf("com.example.app" to v("1.0.5"), "discord" to v("353.0.0")),
+            pending = emptyMap(),
+            sources = mapOf("com.example.app" to source()),
+            installedDependencies = emptyMap(),
+        )
+
+        val update = updates.single()
+        assertEquals(v("1.0.6"), update.available)
+        assertEquals(v("1.0.8"), update.channelVersion)
+        assertEquals(42, update.size)
+        assertNull(update.blocker)
+    }
+
+    @Test
+    fun `an incompatible channel pointer offers nothing when the newest compatible version is installed`() {
+        val updates = findUpdates(
+            incompatibleLatest(),
+            installed = mapOf("com.example.app" to v("1.0.6"), "discord" to v("353.0.0")),
+            pending = emptyMap(),
+            sources = mapOf("com.example.app" to source()),
+            installedDependencies = emptyMap(),
+        )
+
+        assertTrue(updates.isEmpty())
+    }
+
     @Test
     fun `held plugins are listed as blocked`() {
         val updates = findUpdates(

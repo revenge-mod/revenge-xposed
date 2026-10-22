@@ -383,6 +383,92 @@ class ResolverTest {
         assertTrue(skipped.optional)
     }
 
+    /** `a`'s `latest` points to a version requiring a `discord` older than installed. */
+    private fun incompatibleLatestRepos() = listOf(
+        REPO_A to index(
+            "com.example.a" to plugin(
+                channels = mapOf("latest" to "1.0.8"),
+                versions = mapOf(
+                    "1.0.6" to version(deps = arrayOf("discord" to dep("*"))),
+                    "1.0.7" to version(deps = arrayOf("discord" to dep("<=351.6"))),
+                    "1.0.8" to version(deps = arrayOf("discord" to dep("<=352.2"))),
+                    "1.1.0-beta.1" to version(deps = arrayOf("discord" to dep("*"))),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun `an incompatible channel pointer falls back to the newest compatible older version`() {
+        val plan = resolveInstall(ResolveRequest("com.example.a"), incompatibleLatestRepos(), DISCORD, emptyMap())
+
+        val a = plan.actions.single()
+        assertEquals(Version.parse("1.0.6"), a.version)
+        assertEquals("latest", a.channel)
+        assertEquals(Version.parse("1.0.8"), a.channelVersion)
+        assertTrue(plan.warnings.isEmpty())
+    }
+
+    @Test
+    fun `an explicit channel target is strict unless compatible`() {
+        assertFailsWith<PluginSystemResolveException> {
+            resolveInstall(
+                ResolveRequest("com.example.a", mapOf("com.example.a" to PlanTarget(channel = "latest"))),
+                incompatibleLatestRepos(),
+                DISCORD,
+                emptyMap(),
+            )
+        }
+
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a", mapOf("com.example.a" to PlanTarget(channel = "latest", compatible = true))),
+            incompatibleLatestRepos(),
+            DISCORD,
+            emptyMap(),
+        )
+        assertEquals(Version.parse("1.0.6"), plan.actions.single().version)
+        assertEquals(Version.parse("1.0.8"), plan.actions.single().channelVersion)
+    }
+
+    @Test
+    fun `a compatible channel target on a dependency falls back within its range`() {
+        val repos = listOf(
+            REPO_A to index(
+                "com.example.root" to plugin(
+                    versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.a" to dep(">=1.0.6 <1.1")))),
+                ),
+                "com.example.a" to incompatibleLatestRepos().single().second.plugins.getValue("com.example.a"),
+            ),
+        )
+
+        fun plan(compatible: Boolean) = resolveInstall(
+            ResolveRequest(
+                "com.example.root",
+                mapOf("com.example.a" to PlanTarget(channel = "latest", compatible = compatible)),
+            ),
+            repos,
+            DISCORD,
+            emptyMap(),
+        )
+
+        assertFailsWith<PluginSystemResolveException> { plan(compatible = false) }
+        val a = plan(compatible = true).actions.single { it.id == "com.example.a" }
+        assertEquals(Version.parse("1.0.6"), a.version)
+        assertEquals(Version.parse("1.0.8"), a.channelVersion)
+    }
+
+    @Test
+    fun `an exact version target never falls back`() {
+        assertFailsWith<PluginSystemResolveException> {
+            resolveInstall(
+                ResolveRequest("com.example.a", mapOf("com.example.a" to PlanTarget(version = "1.0.8"))),
+                incompatibleLatestRepos(),
+                DISCORD,
+                emptyMap(),
+            )
+        }
+    }
+
     @Test
     fun `unresolvable required dependency aborts`() {
         val repos = listOf(
