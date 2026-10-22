@@ -342,6 +342,47 @@ class ResolverTest {
         assertTrue(plan.warnings.any { "com.example.missing" in it.message })
     }
 
+    /** `a` optionally needs `lib`, whose newest versions require a `discord` older than installed. */
+    private fun nestedRepos(vararg libVersions: Pair<String, String>) = listOf(
+        REPO_A to index(
+            "com.example.a" to plugin(
+                versions = mapOf("1.0.0" to version(deps = arrayOf("com.example.lib" to dep(">=1 <3", optional = true)))),
+            ),
+            "com.example.lib" to plugin(
+                versions = libVersions.associate { (v, discord) -> v to version(deps = arrayOf("discord" to dep(discord))) },
+            ),
+        ),
+    )
+
+    private val DISCORD = API + ("discord" to Version.parse("353.0.0"))
+
+    @Test
+    fun `a dependency falls back to an older version when the newest one's dependencies can't resolve`() {
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a"),
+            nestedRepos("2.4.0" to "*", "2.5.1" to "<=351.6", "2.5.2" to "<=352.2"),
+            DISCORD,
+            emptyMap(),
+        )
+
+        assertEquals(Version.parse("2.4.0"), plan.actions.single { it.id == "com.example.lib" }.version)
+        assertTrue(plan.warnings.isEmpty())
+    }
+
+    @Test
+    fun `an optional dependency with no resolvable version is skipped instead of failing the plan`() {
+        val plan = resolveInstall(
+            ResolveRequest("com.example.a"),
+            nestedRepos("2.5.1" to "<=351.6", "2.5.2" to "<=352.2"),
+            DISCORD,
+            emptyMap(),
+        )
+
+        assertEquals(listOf("com.example.a"), plan.actions.map { it.id })
+        val skipped = plan.warnings.filterIsInstance<ResolveIssue.Unresolved>().single { it.id == "com.example.lib" }
+        assertTrue(skipped.optional)
+    }
+
     @Test
     fun `unresolvable required dependency aborts`() {
         val repos = listOf(
