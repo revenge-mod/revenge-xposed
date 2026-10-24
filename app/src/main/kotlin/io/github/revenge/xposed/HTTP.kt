@@ -2,13 +2,13 @@ package io.github.revenge.xposed
 
 import io.ktor.client.*
 import io.ktor.client.call.*
-import io.ktor.client.engine.cio.*
+import io.ktor.client.engine.okhttp.*
 import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 
 internal val httpClient by lazy {
-    HttpClient(CIO) {
+    HttpClient(OkHttp) {
         expectSuccess = false
         install(UserAgent) { agent = RevengeConstants.USER_AGENT }
         install(HttpRedirect) {}
