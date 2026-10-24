@@ -1,14 +1,14 @@
 [versions]
 agp = "9.2.1"
-kotlin = "2.4.10"
+kotlin = "2.4.21"
 
 # Published :api version
 apiVersion = "1.2.1"
 
-androidxCore = "1.19.0"
+androidxCore = "1.19.1"
 coroutines = "1.11.0"
 dexkit = "2.3.0"
-ktor = "3.5.1"
+ktor = "3.6.0"
 serialization = "1.11.0"
 xposed = "82"
 
